@@ -16,9 +16,6 @@ from tap_salesforce.salesforce.exceptions import (
 
 LOGGER = singer.get_logger()
 
-# The minimum expiration setting for SF Refresh Tokens is 15 minutes
-REFRESH_TOKEN_EXPIRATION_PERIOD = 900
-
 BULK_API_TYPE = "BULK"
 REST_API_TYPE = "REST"
 
@@ -198,13 +195,13 @@ class Salesforce():
                  default_start_date=None,
                  api_type=None):
         self.api_type = api_type.upper() if api_type else None
-        self.refresh_token = refresh_token
-        self.token = token
-        self.sf_client_id = sf_client_id
-        self.sf_client_secret = sf_client_secret
+        # self.refresh_token = refresh_token
+        # self.token = token
+        # self.sf_client_id = sf_client_id
+        # self.sf_client_secret = sf_client_secret
         self.session = requests.Session()
-        self.access_token = None
-        self.instance_url = None
+        # self.access_token = None
+        # self.instance_url = None
         self.quota_percent_per_run = float(
             quota_percent_per_run) if quota_percent_per_run is not None else 25
         self.quota_percent_total = float(
@@ -220,9 +217,6 @@ class Salesforce():
 
         # validate start_date
         singer_utils.strptime(default_start_date)
-
-    def _get_standard_headers(self):
-        return {"Authorization": "Bearer {}".format(self.access_token)}
 
     # pylint: disable=anomalous-backslash-in-string,line-too-long
     def check_rest_quota_usage(self, headers):
