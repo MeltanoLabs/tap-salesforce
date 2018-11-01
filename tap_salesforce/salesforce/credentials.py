@@ -1,14 +1,76 @@
+import threading
+import logging
+import requests
 from collections import namedtuple
+from simple_salesforce import SalesforceLogin
 
 
-LOGGER = singer.get_logger()
+LOGGER = logging.getLogger(__name__)
 
 
-OAuthCredentials = namedtuple('OAuthCredentials', ("client_id", "client_secret", "refresh_token"))
-PasswordCredentials = namedtuple('PasswordCredentials', ("username", "password", "security_token"))
+OAuthCredentials = namedtuple('OAuthCredentials', (
+    "client_id",
+    "client_secret",
+    "refresh_token"
+))
+
+PasswordCredentials = namedtuple('PasswordCredentials', (
+    "client_id",
+    "username",
+    "password",
+    "security_token"
+))
 
 
-class SalesforceAuthOAuth():
+def parse_credentials(config):
+    for cls in reversed((OAuthCredentials, PasswordCredentials)):
+        creds = cls(*(config.get(key) for key in cls._fields))
+        if all(creds):
+            return creds
+
+    raise Exception("Cannot create credentials from config.")
+
+
+class SalesforceAuth():
+    def __init__(self, credentials, is_sandbox=False):
+        self.is_sandbox = is_sandbox
+        self._credentials = credentials
+        self._access_token = None
+        self._instance_url = None
+        self._auth_header = None
+
+    def login(self):
+        """Attempt to login and set the `instance_url` and `access_token` on success."""
+        pass
+
+    @property
+    def rest_headers(self):
+        return {"Authorization": "Bearer {}".format(self._access_token)}
+
+    @property
+    def bulk_headers(self):
+        return {"X-SFDC-Session": self._access_token,
+                "Content-Type": "application/json"}
+
+    @property
+    def instance_url(self):
+        return self._instance_url
+
+    @classmethod
+    def from_credentials(cls, credentials, **kwargs):
+        if isinstance(credentials, OAuthCredentials):
+            return SalesforceAuthOAuth(credentials, **kwargs)
+
+        if isinstance(credentials, PasswordCredentials):
+            return SalesforceAuthPassword(credentials, **kwargs)
+
+        raise Exception("Invalid credentials")
+
+
+class SalesforceAuthOAuth(SalesforceAuth):
+    # The minimum expiration setting for SF Refresh Tokens is 15 minutes
+    REFRESH_TOKEN_EXPIRATION_PERIOD = 900
+
     @property
     def _login_body(self):
         return {'grant_type': 'refresh_token', **self._credentials._asdict()}
@@ -23,33 +85,19 @@ class SalesforceAuthOAuth():
         return login_url
 
     def login(self):
-        LOGGER.info("Attempting login via OAuth2")
-        super().login()
-
-
-class SalesforceAuth():
-    # The minimum expiration setting for SF Refresh Tokens is 15 minutes
-    REFRESH_TOKEN_EXPIRATION_PERIOD = 900
-
-    def __init__(self, credentials, is_sandbox=False):
-        self.is_sandbox = is_sandbox
-        self._credentials = credentials
-
-
-    def login(self):
-        resp = None
         try:
-            resp = self._make_request("POST",
-                                      self._login_url,
-                                      body=self._login_body,
-                                      headers={"Content-Type": "application/x-www-form-urlencoded"})
+            LOGGER.info("Attempting login via OAuth2")
 
-            LOGGER.info("OAuth2 login successful")
+            resp = requests.post(self._login_url,
+                                 data=self._login_body,
+                                 headers={"Content-Type": "application/x-www-form-urlencoded"})
 
+            resp.raise_for_status()
             auth = resp.json()
 
-            self.access_token = auth['access_token']
-            self.instance_url = auth['instance_url']
+            LOGGER.info("OAuth2 login successful")
+            self._access_token = auth['access_token']
+            self._instance_url = auth['instance_url']
         except Exception as e:
             error_message = str(e)
             if resp:
@@ -57,17 +105,16 @@ class SalesforceAuth():
             raise Exception(error_message) from e
         finally:
             LOGGER.info("Starting new login timer")
-            self.login_timer = threading.Timer(REFRESH_TOKEN_EXPIRATION_PERIOD, self.login)
+            self.login_timer = threading.Timer(self.REFRESH_TOKEN_EXPIRATION_PERIOD, self.login)
             self.login_timer.start()
 
-        pass
 
-    @property
-    def auth_header(self)
-        if not self._auth_header:
-            self._auth_header = self._generate_auth_headers()
+class SalesforceAuthPassword(SalesforceAuth):
+    def login(self):
+        login = SalesforceLogin(
+            sandbox=self.is_sandbox,
+            **self._credentials._asdict()
+        )
 
-        return self._auth_header
-
-    def _get_standard_headers(self):
-        return {"Authorization": "Bearer {}".format(self.access_token)}
+        self._access_token, host = login
+        self._instance_url = "https://" + host

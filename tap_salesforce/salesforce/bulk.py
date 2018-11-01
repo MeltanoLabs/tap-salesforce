@@ -85,7 +85,7 @@ class Bulk():
             raise TapSalesforceQuotaExceededException(partial_message)
 
     def _get_bulk_headers(self):
-        return {"X-SFDC-Session": self.sf.access_token,
+        return {"X-SFDC-Session": self.sf.auth.bulk_headers,
                 "Content-Type": "application/json"}
 
     def _bulk_query(self, catalog_entry, state):

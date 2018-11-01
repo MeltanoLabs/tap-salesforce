@@ -29,7 +29,7 @@ class Rest():
             retries=MAX_RETRIES):
         params = {"q": query}
         url = "{}/services/data/v41.0/queryAll".format(self.sf.instance_url)
-        headers = self.sf._get_standard_headers()
+        headers = self.sf.auth.rest_headers
 
         if end_date is None:
             end_date = singer_utils.now()
