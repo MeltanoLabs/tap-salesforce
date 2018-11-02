@@ -368,8 +368,8 @@ def main_impl():
 
         if args.discover:
             do_discover(sf)
-        elif args.properties:
-            catalog = args.properties
+        elif args.properties or args.catalog:
+            catalog = args.properties or args.catalog.to_dict()
             state = build_state(args.state, catalog)
             do_sync(sf, catalog, state)
     finally:

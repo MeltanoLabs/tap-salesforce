@@ -246,6 +246,10 @@ class Salesforce():
     def login(self):
         self.auth.login()
 
+    @property
+    def instance_url(self):
+        return self.auth.instance_url
+
     # pylint: disable=too-many-arguments
     @backoff.on_exception(backoff.expo,
                           requests.exceptions.ConnectionError,
