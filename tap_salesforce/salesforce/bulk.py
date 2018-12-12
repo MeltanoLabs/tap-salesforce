@@ -59,7 +59,7 @@ class Bulk():
         url = self.sf.data_url.format(self.sf.instance_url, endpoint)
 
         with metrics.http_request_timer(endpoint):
-            resp = self.sf._make_request('GET', url, headers=self.sf._get_standard_headers()).json()
+            resp = self.sf._make_request('GET', url, headers=self.sf.auth.rest_headers).json()
 
         quota_max = resp['DailyBulkApiRequests']['Max']
         max_requests_for_run = int((self.sf.quota_percent_per_run * quota_max) / 100)
@@ -85,8 +85,7 @@ class Bulk():
             raise TapSalesforceQuotaExceededException(partial_message)
 
     def _get_bulk_headers(self):
-        return {"X-SFDC-Session": self.sf.access_token,
-                "Content-Type": "application/json"}
+        return {**self.sf.auth.bulk_headers, "Content-Type": "application/json"}
 
     def _bulk_query(self, catalog_entry, state):
         job_id = self._create_job(catalog_entry)

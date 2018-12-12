@@ -10,15 +10,31 @@ from tap_salesforce.sync import (sync_stream, resume_syncing_bulk_query, get_str
 from tap_salesforce.salesforce import Salesforce
 from tap_salesforce.salesforce.exceptions import (
     TapSalesforceException, TapSalesforceQuotaExceededException)
+from tap_salesforce.salesforce.credentials import (
+    OAuthCredentials,
+    PasswordCredentials,
+    parse_credentials
+)
 
 LOGGER = singer.get_logger()
 
-REQUIRED_CONFIG_KEYS = ['refresh_token',
-                        'client_id',
-                        'client_secret',
-                        'start_date',
-                        'api_type',
+# the tap requires these keys
+REQUIRED_CONFIG_KEYS = ['api_type',
                         'select_fields_by_default']
+
+# and either one of these credentials
+
+# OAuth:
+# - client_id
+# - client_secret
+# - refresh_token
+OAUTH_CONFIG_KEYS = OAuthCredentials._fields
+
+# Password:
+# - username
+# - password
+# - security_token
+PASSWORD_CONFIG_KEYS = PasswordCredentials._fields
 
 CONFIG = {
     'refresh_token': None,
@@ -337,12 +353,11 @@ def main_impl():
     args = singer_utils.parse_args(REQUIRED_CONFIG_KEYS)
     CONFIG.update(args.config)
 
+    credentials = parse_credentials(CONFIG)
     sf = None
     try:
         sf = Salesforce(
-            refresh_token=CONFIG['refresh_token'],
-            sf_client_id=CONFIG['client_id'],
-            sf_client_secret=CONFIG['client_secret'],
+            credentials=credentials,
             quota_percent_total=CONFIG.get('quota_percent_total'),
             quota_percent_per_run=CONFIG.get('quota_percent_per_run'),
             is_sandbox=CONFIG.get('is_sandbox'),
@@ -353,8 +368,8 @@ def main_impl():
 
         if args.discover:
             do_discover(sf)
-        elif args.properties:
-            catalog = args.properties
+        elif args.properties or args.catalog:
+            catalog = args.properties or args.catalog.to_dict()
             state = build_state(args.state, catalog)
             do_sync(sf, catalog, state)
     finally:

@@ -10,9 +10,14 @@ setup(name='tap-salesforce',
       classifiers=['Programming Language :: Python :: 3 :: Only'],
       py_modules=['tap_salesforce'],
       install_requires=[
-          'requests==2.12.4',
+          'requests',
           'singer-python==5.3.1',
-          'xmltodict==0.11.0'
+          'xmltodict==0.11.0',
+          'simple-salesforce',
+          # fix version conflicts, see https://gitlab.com/meltano/meltano/issues/193
+          'idna==2.7',
+          'cryptography',
+          'pyOpenSSL',
       ],
       entry_points='''
           [console_scripts]

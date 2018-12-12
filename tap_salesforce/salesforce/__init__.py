@@ -1,5 +1,4 @@
 import re
-import threading
 import time
 import backoff
 import requests
@@ -13,11 +12,10 @@ from tap_salesforce.salesforce.rest import Rest
 from tap_salesforce.salesforce.exceptions import (
     TapSalesforceException,
     TapSalesforceQuotaExceededException)
+from tap_salesforce.salesforce.credentials import SalesforceAuth
+
 
 LOGGER = singer.get_logger()
-
-# The minimum expiration setting for SF Refresh Tokens is 15 minutes
-REFRESH_TOKEN_EXPIRATION_PERIOD = 900
 
 BULK_API_TYPE = "BULK"
 REST_API_TYPE = "REST"
@@ -187,24 +185,17 @@ def field_to_property_schema(field, mdata):
 class Salesforce():
     # pylint: disable=too-many-instance-attributes,too-many-arguments
     def __init__(self,
-                 refresh_token=None,
+                 credentials=None,
                  token=None,
-                 sf_client_id=None,
-                 sf_client_secret=None,
                  quota_percent_per_run=None,
                  quota_percent_total=None,
                  is_sandbox=None,
                  select_fields_by_default=None,
                  default_start_date=None,
                  api_type=None):
+        self.auth = SalesforceAuth.from_credentials(credentials)
         self.api_type = api_type.upper() if api_type else None
-        self.refresh_token = refresh_token
-        self.token = token
-        self.sf_client_id = sf_client_id
-        self.sf_client_secret = sf_client_secret
         self.session = requests.Session()
-        self.access_token = None
-        self.instance_url = None
         self.quota_percent_per_run = float(
             quota_percent_per_run) if quota_percent_per_run is not None else 25
         self.quota_percent_total = float(
@@ -220,9 +211,6 @@ class Salesforce():
 
         # validate start_date
         singer_utils.strptime(default_start_date)
-
-    def _get_standard_headers(self):
-        return {"Authorization": "Bearer {}".format(self.access_token)}
 
     # pylint: disable=anomalous-backslash-in-string,line-too-long
     def check_rest_quota_usage(self, headers):
@@ -255,6 +243,13 @@ class Salesforce():
                                                                        self.quota_percent_per_run)
             raise TapSalesforceQuotaExceededException(partial_message)
 
+    def login(self):
+        self.auth.login()
+
+    @property
+    def instance_url(self):
+        return self.auth.instance_url
+
     # pylint: disable=too-many-arguments
     @backoff.on_exception(backoff.expo,
                           requests.exceptions.ConnectionError,
@@ -271,10 +266,7 @@ class Salesforce():
         else:
             raise TapSalesforceException("Unsupported HTTP method")
 
-        try:
-            resp.raise_for_status()
-        except RequestException as ex:
-            raise ex
+        resp.raise_for_status()
 
         if resp.headers.get('Sforce-Limit-Info') is not None:
             self.rest_requests_attempted += 1
@@ -282,48 +274,18 @@ class Salesforce():
 
         return resp
 
-    def login(self):
-        if self.is_sandbox:
-            login_url = 'https://test.salesforce.com/services/oauth2/token'
-        else:
-            login_url = 'https://login.salesforce.com/services/oauth2/token'
-
-        login_body = {'grant_type': 'refresh_token', 'client_id': self.sf_client_id,
-                      'client_secret': self.sf_client_secret, 'refresh_token': self.refresh_token}
-
-        LOGGER.info("Attempting login via OAuth2")
-
-        resp = None
-        try:
-            resp = self._make_request("POST", login_url, body=login_body, headers={"Content-Type": "application/x-www-form-urlencoded"})
-
-            LOGGER.info("OAuth2 login successful")
-
-            auth = resp.json()
-
-            self.access_token = auth['access_token']
-            self.instance_url = auth['instance_url']
-        except Exception as e:
-            error_message = str(e)
-            if resp:
-                error_message = error_message + ", Response from Salesforce: {}".format(resp.text)
-            raise Exception(error_message) from e
-        finally:
-            LOGGER.info("Starting new login timer")
-            self.login_timer = threading.Timer(REFRESH_TOKEN_EXPIRATION_PERIOD, self.login)
-            self.login_timer.start()
-
     def describe(self, sobject=None):
         """Describes all objects or a specific object"""
-        headers = self._get_standard_headers()
+        headers = self.auth.rest_headers
+        instance_url = self.auth.instance_url
         if sobject is None:
             endpoint = "sobjects"
             endpoint_tag = "sobjects"
-            url = self.data_url.format(self.instance_url, endpoint)
+            url = self.data_url.format(instance_url, endpoint)
         else:
             endpoint = "sobjects/{}/describe".format(sobject)
             endpoint_tag = sobject
-            url = self.data_url.format(self.instance_url, endpoint)
+            url = self.data_url.format(instance_url, endpoint)
 
         with metrics.http_request_timer("describe") as timer:
             timer.tags['endpoint'] = endpoint_tag
