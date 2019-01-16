@@ -327,6 +327,8 @@ async def sync_catalog_entry(sf, catalog_entry, state, starting_stream):
                 bookmark)
             singer.write_state(state)
     else:
+        state_msg_freq = CONFIG.get('state_message_frequency', 1000)
+
         # Tables with a replication_key or an empty bookmark will emit an
         # activate_version at the beginning of their sync
         bookmark_is_empty = state.get('bookmarks', {}).get(
@@ -338,11 +340,11 @@ async def sync_catalog_entry(sf, catalog_entry, state, starting_stream):
                                           catalog_entry['tap_stream_id'],
                                           'version',
                                           stream_version)
-        rows_count = await loop.run_in_executor(None, sync_stream, sf, catalog_entry, state)
+        rows_count = await loop.run_in_executor(None, sync_stream, sf, catalog_entry, state, state_msg_freq)
         LOGGER.info("%s: Completed sync (%s rows)", stream_name, rows_count)
 
 def do_sync(sf, catalog, state):
-    starting_stream = state.get("current_stream")
+    starting_stream = None
 
     if starting_stream:
         LOGGER.info("Resuming sync from %s", starting_stream)

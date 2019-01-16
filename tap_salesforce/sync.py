@@ -85,12 +85,12 @@ def resume_syncing_bulk_query(sf, catalog_entry, job_id, state, counter):
 
     return counter.value
 
-def sync_stream(sf, catalog_entry, state):
+def sync_stream(sf, catalog_entry, state, state_msg_freq):
     stream = catalog_entry['stream']
 
     with metrics.record_counter(stream) as counter:
         try:
-            sync_records(sf, catalog_entry, state, counter)
+            sync_records(sf, catalog_entry, state, counter, state_msg_freq)
             singer.write_state(state)
         except RequestException as ex:
             raise Exception("Error syncing {}: {} Response: {}".format(
@@ -101,7 +101,7 @@ def sync_stream(sf, catalog_entry, state):
 
         return counter.value
 
-def sync_records(sf, catalog_entry, state, counter):
+def sync_records(sf, catalog_entry, state, counter, state_msg_freq):
     chunked_bookmark = singer_utils.strptime_with_tz(sf.get_start_date(state, catalog_entry))
     stream = catalog_entry['stream']
     schema = catalog_entry['schema']
@@ -140,7 +140,9 @@ def sync_records(sf, catalog_entry, state, counter):
                     catalog_entry['tap_stream_id'],
                     'JobHighestBookmarkSeen',
                     singer_utils.strftime(chunked_bookmark))
-                singer.write_state(state)
+
+                if counter.value % state_msg_freq == 0:
+                    singer.write_state(state)
         # Before writing a bookmark, make sure Salesforce has not given us a
         # record with one outside our range
         elif replication_key_value and replication_key_value <= start_time:
@@ -149,10 +151,15 @@ def sync_records(sf, catalog_entry, state, counter):
                 catalog_entry['tap_stream_id'],
                 replication_key,
                 rec[replication_key])
-            singer.write_state(state)
 
-        # Tables with no replication_key will send an
-        # activate_version message for the next sync
+            if counter.value % state_msg_freq == 0:
+                singer.write_state(state)
+
+    # Write the state generated for the last record in sf.query
+    singer.write_state(state)
+
+    # Tables with no replication_key will send an
+    # activate_version message for the next sync
     if not replication_key:
         singer.write_message(activate_version_message)
         state = singer.write_bookmark(
