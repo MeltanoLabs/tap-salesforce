@@ -315,8 +315,8 @@ async def sync_catalog_entry(sf, catalog_entry, state, starting_stream):
         with metrics.record_counter(stream) as counter:
             LOGGER.info("Found JobID from previous Bulk Query. Resuming sync for job: %s", job_id)
             # Resuming a sync should clear out the remaining state once finished
-            counter = await loop.run_in_executor(None, resume_syncing_bulk_query, sf, catalog_entry, job_id, state, counter)
-            LOGGER.info("%s: Completed sync (%s rows)", stream_name, counter.value)
+            rows_count = await loop.run_in_executor(None, resume_syncing_bulk_query, sf, catalog_entry, job_id, state, counter)
+            LOGGER.info("%s: Completed sync (%s rows)", stream_name, rows_count)
             state.get('bookmarks', {}).get(catalog_entry['tap_stream_id'], {}).pop('JobID', None)
             state.get('bookmarks', {}).get(catalog_entry['tap_stream_id'], {}).pop('BatchIDs', None)
             bookmark = state.get('bookmarks', {}).get(catalog_entry['tap_stream_id'], {}).pop('JobHighestBookmarkSeen', None)
@@ -338,8 +338,8 @@ async def sync_catalog_entry(sf, catalog_entry, state, starting_stream):
                                           catalog_entry['tap_stream_id'],
                                           'version',
                                           stream_version)
-        counter = await loop.run_in_executor(None, sync_stream, sf, catalog_entry, state)
-        LOGGER.info("%s: Completed sync (%s rows)", stream_name, counter.value)
+        rows_count = await loop.run_in_executor(None, sync_stream, sf, catalog_entry, state)
+        LOGGER.info("%s: Completed sync (%s rows)", stream_name, rows_count)
 
 def do_sync(sf, catalog, state):
     starting_stream = state.get("current_stream")
