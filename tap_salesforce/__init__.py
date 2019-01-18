@@ -276,7 +276,7 @@ def do_discover(sf):
     result = {'streams': entries}
     json.dump(result, sys.stdout, indent=4)
 
-async def sync_catalog_entry(sf, catalog_entry, state, starting_stream):
+async def sync_catalog_entry(sf, catalog_entry, state):
     stream_version = get_stream_version(catalog_entry, state)
     stream = catalog_entry['stream']
     stream_alias = catalog_entry.get('stream_alias')
@@ -293,12 +293,8 @@ async def sync_catalog_entry(sf, catalog_entry, state, starting_stream):
         LOGGER.info("%s: Skipping - not selected", stream_name)
         return
 
-    if starting_stream and starting_stream == stream_name:
-        LOGGER.info("%s: Resuming", stream_name)
-    else:
-        LOGGER.info("%s: Starting", stream_name)
+    LOGGER.info("%s: Starting", stream_name)
 
-    state["current_stream"] = stream_name
     singer.write_state(state)
     key_properties = metadata.to_map(catalog_entry['metadata']).get((), {}).get('table-key-properties')
     singer.write_schema(
@@ -327,7 +323,7 @@ async def sync_catalog_entry(sf, catalog_entry, state, starting_stream):
                 bookmark)
             singer.write_state(state)
     else:
-        state_msg_freq = CONFIG.get('state_message_frequency', 1000)
+        state_msg_threshold = CONFIG.get('state_message_threshold', 1000)
 
         # Tables with a replication_key or an empty bookmark will emit an
         # activate_version at the beginning of their sync
@@ -340,43 +336,19 @@ async def sync_catalog_entry(sf, catalog_entry, state, starting_stream):
                                           catalog_entry['tap_stream_id'],
                                           'version',
                                           stream_version)
-        rows_count = await loop.run_in_executor(None, sync_stream, sf, catalog_entry, state, state_msg_freq)
+        rows_count = await loop.run_in_executor(None, sync_stream, sf, catalog_entry, state, state_msg_threshold)
         LOGGER.info("%s: Completed sync (%s rows)", stream_name, rows_count)
 
 def do_sync(sf, catalog, state):
-    starting_stream = None
-
-    if starting_stream:
-        LOGGER.info("Resuming sync from %s", starting_stream)
-    else:
-        LOGGER.info("Starting sync")
+    LOGGER.info("Starting sync")
 
     loop = asyncio.get_event_loop()
     try:
-        # Identify the streams to sync if a starting stream is provided
-        # This step needs to serially check the catalog, so it is performed
-        # Before asynchronously scheduling the sync_catalog_entry() tasks
-        if starting_stream:
-            # Only streams whose position is after the starting_stream in the
-            # catalog will be synced
-            streams_to_sync = []
-            for catalog_entry in catalog["streams"]:
-                stream_name = catalog_entry["tap_stream_id"]
-                if starting_stream:
-                    if starting_stream == stream_name:
-                        starting_stream = None
-                        streams_to_sync.append(catalog_entry)
-                    else:
-                        LOGGER.info("%s: Skipping - already synced", stream_name)
-                else:
-                    streams_to_sync.append(catalog_entry)
-        else:
-            # All Streams will be synced
-            streams_to_sync = catalog["streams"]
+        streams_to_sync = catalog["streams"]
 
         # Schedule one task for each catalog entry to be extracted
         # and run them concurrently.
-        sync_tasks = (sync_catalog_entry(sf, catalog_entry, state, starting_stream)
+        sync_tasks = (sync_catalog_entry(sf, catalog_entry, state)
                       for catalog_entry in streams_to_sync)
         tasks = asyncio.gather(*sync_tasks)
         loop.run_until_complete(tasks)
@@ -384,7 +356,6 @@ def do_sync(sf, catalog, state):
         loop.run_until_complete(loop.shutdown_asyncgens())
         loop.close()
 
-    state["current_stream"] = None
     singer.write_state(state)
     LOGGER.info("Finished sync")
 
