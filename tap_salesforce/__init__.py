@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import asyncio
+import concurrent.futures
 import json
 import sys
 import singer
@@ -342,7 +343,11 @@ async def sync_catalog_entry(sf, catalog_entry, state):
 def do_sync(sf, catalog, state):
     LOGGER.info("Starting sync")
 
+    max_workers = CONFIG.get('max_workers', 8)
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
     loop = asyncio.get_event_loop()
+    loop.set_default_executor(executor)
+
     try:
         streams_to_sync = catalog["streams"]
 

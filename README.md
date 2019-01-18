@@ -31,7 +31,8 @@ $ tap-salesforce --config config.json --properties properties.json --state state
   "start_date": "2017-11-02T00:00:00Z",
   "api_type": "BULK",
   "select_fields_by_default": true,
-  "state_message_threshold": 1000
+  "state_message_threshold": 1000,
+  "max_workers": 8
 }
 ```
 
@@ -42,6 +43,8 @@ The `start_date` is used by the tap as a bound on SOQL queries when searching fo
 The `api_type` is used to switch the behavior of the tap between using Salesforce's "REST" and "BULK" APIs. When new fields are discovered in Salesforce objects, the `select_fields_by_default` key describes whether or not the tap will select those fields by default.
 
 The `state_message_threshold` is used to throttle how often STATE messages are generated when the tap is using the "REST" API. This is a balance between not slowing down execution due to too many STATE messages produced and how many records must be fetched again if a tap fails unexpectedly. Defaults to 1000 (generate a STATE message every 1000 records).
+
+The `max_workers` value is used to set the maximum number of threads used in order to concurrently extract data for streams. Defaults to 8 (extract data for 8 streams in paralel).
 
 ## Run Discovery
 
