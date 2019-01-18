@@ -83,8 +83,6 @@ def resume_syncing_bulk_query(sf, catalog_entry, job_id, state, counter):
         LOGGER.info("Batches to go: %d", len(batch_ids))
         singer.write_state(state)
 
-    return counter.value
-
 def sync_stream(sf, catalog_entry, state, state_msg_threshold):
     stream = catalog_entry['stream']
 
@@ -99,8 +97,6 @@ def sync_stream(sf, catalog_entry, state, state_msg_threshold):
         except Exception as ex:
             raise Exception("Error syncing {}: {}".format(
                 stream, ex)) from ex
-
-        return counter.value
 
 def sync_records(sf, catalog_entry, state, counter, state_msg_threshold):
     chunked_bookmark = singer_utils.strptime_with_tz(sf.get_start_date(state, catalog_entry))
