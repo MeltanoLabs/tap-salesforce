@@ -337,7 +337,7 @@ async def sync_catalog_entry(sf, catalog_entry, state):
                                           'version',
                                           stream_version)
         await loop.run_in_executor(None, sync_stream, sf, catalog_entry, state, state_msg_threshold)
-        LOGGER.info("%Completed sync for %s", stream_name)
+        LOGGER.info("Completed sync for %s", stream_name)
 
 def do_sync(sf, catalog, state):
     LOGGER.info("Starting sync")
