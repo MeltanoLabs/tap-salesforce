@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import asyncio
+import concurrent.futures
 import json
 import sys
 import singer
@@ -275,83 +277,90 @@ def do_discover(sf):
     result = {'streams': entries}
     json.dump(result, sys.stdout, indent=4)
 
-def do_sync(sf, catalog, state):
-    starting_stream = state.get("current_stream")
+async def sync_catalog_entry(sf, catalog_entry, state):
+    stream_version = get_stream_version(catalog_entry, state)
+    stream = catalog_entry['stream']
+    stream_alias = catalog_entry.get('stream_alias')
+    stream_name = catalog_entry["tap_stream_id"]
+    activate_version_message = singer.ActivateVersionMessage(
+        stream=(stream_alias or stream), version=stream_version)
 
-    if starting_stream:
-        LOGGER.info("Resuming sync from %s", starting_stream)
+    catalog_metadata = metadata.to_map(catalog_entry['metadata'])
+    replication_key = catalog_metadata.get((), {}).get('replication-key')
+
+    mdata = metadata.to_map(catalog_entry['metadata'])
+
+    if not stream_is_selected(mdata):
+        LOGGER.info("%s: Skipping - not selected", stream_name)
+        return
+
+    LOGGER.info("%s: Starting", stream_name)
+
+    singer.write_state(state)
+    key_properties = metadata.to_map(catalog_entry['metadata']).get((), {}).get('table-key-properties')
+    singer.write_schema(
+        stream,
+        catalog_entry['schema'],
+        key_properties,
+        replication_key,
+        stream_alias)
+
+    loop = asyncio.get_running_loop()
+
+    job_id = singer.get_bookmark(state, catalog_entry['tap_stream_id'], 'JobID')
+    if job_id:
+        with metrics.record_counter(stream) as counter:
+            LOGGER.info("Found JobID from previous Bulk Query. Resuming sync for job: %s", job_id)
+            # Resuming a sync should clear out the remaining state once finished
+            await loop.run_in_executor(None, resume_syncing_bulk_query, sf, catalog_entry, job_id, state, counter)
+            LOGGER.info("Completed sync for %s", stream_name)
+            state.get('bookmarks', {}).get(catalog_entry['tap_stream_id'], {}).pop('JobID', None)
+            state.get('bookmarks', {}).get(catalog_entry['tap_stream_id'], {}).pop('BatchIDs', None)
+            bookmark = state.get('bookmarks', {}).get(catalog_entry['tap_stream_id'], {}).pop('JobHighestBookmarkSeen', None)
+            state = singer.write_bookmark(
+                state,
+                catalog_entry['tap_stream_id'],
+                replication_key,
+                bookmark)
+            singer.write_state(state)
     else:
-        LOGGER.info("Starting sync")
+        state_msg_threshold = CONFIG.get('state_message_threshold', 1000)
 
-    for catalog_entry in catalog["streams"]:
-        stream_version = get_stream_version(catalog_entry, state)
-        stream = catalog_entry['stream']
-        stream_alias = catalog_entry.get('stream_alias')
-        stream_name = catalog_entry["tap_stream_id"]
-        activate_version_message = singer.ActivateVersionMessage(
-            stream=(stream_alias or stream), version=stream_version)
+        # Tables with a replication_key or an empty bookmark will emit an
+        # activate_version at the beginning of their sync
+        bookmark_is_empty = state.get('bookmarks', {}).get(
+            catalog_entry['tap_stream_id']) is None
 
-        catalog_metadata = metadata.to_map(catalog_entry['metadata'])
-        replication_key = catalog_metadata.get((), {}).get('replication-key')
+        if replication_key or bookmark_is_empty:
+            singer.write_message(activate_version_message)
+            state = singer.write_bookmark(state,
+                                          catalog_entry['tap_stream_id'],
+                                          'version',
+                                          stream_version)
+        await loop.run_in_executor(None, sync_stream, sf, catalog_entry, state, state_msg_threshold)
+        LOGGER.info("Completed sync for %s", stream_name)
 
-        mdata = metadata.to_map(catalog_entry['metadata'])
+def do_sync(sf, catalog, state):
+    LOGGER.info("Starting sync")
 
-        if not stream_is_selected(mdata):
-            LOGGER.info("%s: Skipping - not selected", stream_name)
-            continue
+    max_workers = CONFIG.get('max_workers', 8)
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
+    loop = asyncio.get_event_loop()
+    loop.set_default_executor(executor)
 
-        if starting_stream:
-            if starting_stream == stream_name:
-                LOGGER.info("%s: Resuming", stream_name)
-                starting_stream = None
-            else:
-                LOGGER.info("%s: Skipping - already synced", stream_name)
-                continue
-        else:
-            LOGGER.info("%s: Starting", stream_name)
+    try:
+        streams_to_sync = catalog["streams"]
 
-        state["current_stream"] = stream_name
-        singer.write_state(state)
-        key_properties = metadata.to_map(catalog_entry['metadata']).get((), {}).get('table-key-properties')
-        singer.write_schema(
-            stream,
-            catalog_entry['schema'],
-            key_properties,
-            replication_key,
-            stream_alias)
+        # Schedule one task for each catalog entry to be extracted
+        # and run them concurrently.
+        sync_tasks = (sync_catalog_entry(sf, catalog_entry, state)
+                      for catalog_entry in streams_to_sync)
+        tasks = asyncio.gather(*sync_tasks)
+        loop.run_until_complete(tasks)
+    finally:
+        loop.run_until_complete(loop.shutdown_asyncgens())
+        loop.close()
 
-        job_id = singer.get_bookmark(state, catalog_entry['tap_stream_id'], 'JobID')
-        if job_id:
-            with metrics.record_counter(stream) as counter:
-                LOGGER.info("Found JobID from previous Bulk Query. Resuming sync for job: %s", job_id)
-                # Resuming a sync should clear out the remaining state once finished
-                counter = resume_syncing_bulk_query(sf, catalog_entry, job_id, state, counter)
-                LOGGER.info("%s: Completed sync (%s rows)", stream_name, counter.value)
-                state.get('bookmarks', {}).get(catalog_entry['tap_stream_id'], {}).pop('JobID', None)
-                state.get('bookmarks', {}).get(catalog_entry['tap_stream_id'], {}).pop('BatchIDs', None)
-                bookmark = state.get('bookmarks', {}).get(catalog_entry['tap_stream_id'], {}).pop('JobHighestBookmarkSeen', None)
-                state = singer.write_bookmark(
-                    state,
-                    catalog_entry['tap_stream_id'],
-                    replication_key,
-                    bookmark)
-                singer.write_state(state)
-        else:
-            # Tables with a replication_key or an empty bookmark will emit an
-            # activate_version at the beginning of their sync
-            bookmark_is_empty = state.get('bookmarks', {}).get(
-                catalog_entry['tap_stream_id']) is None
-
-            if replication_key or bookmark_is_empty:
-                singer.write_message(activate_version_message)
-                state = singer.write_bookmark(state,
-                                              catalog_entry['tap_stream_id'],
-                                              'version',
-                                              stream_version)
-            counter = sync_stream(sf, catalog_entry, state)
-            LOGGER.info("%s: Completed sync (%s rows)", stream_name, counter.value)
-
-    state["current_stream"] = None
     singer.write_state(state)
     LOGGER.info("Finished sync")
 
