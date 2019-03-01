@@ -305,7 +305,7 @@ async def sync_catalog_entry(sf, catalog_entry, state):
         replication_key,
         stream_alias)
 
-    loop = asyncio.get_running_loop()
+    loop = asyncio.get_event_loop()
 
     job_id = singer.get_bookmark(state, catalog_entry['tap_stream_id'], 'JobID')
     if job_id:
