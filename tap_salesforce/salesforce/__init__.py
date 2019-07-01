@@ -173,6 +173,8 @@ def field_to_property_schema(field, mdata):
             "longitude": {"type": ["null", "number"]},
             "latitude": {"type": ["null", "number"]}
         }
+    elif sf_type == 'json':
+        property_schema['type'] = "string"
     else:
         raise TapSalesforceException("Found unsupported type: {}".format(sf_type))
 
@@ -196,10 +198,10 @@ class Salesforce():
         self.auth = SalesforceAuth.from_credentials(credentials)
         self.api_type = api_type.upper() if api_type else None
         self.session = requests.Session()
-        self.quota_percent_per_run = float(
-            quota_percent_per_run) if quota_percent_per_run is not None else 25
-        self.quota_percent_total = float(
-            quota_percent_total) if quota_percent_total is not None else 80
+        if isinstance(quota_percent_per_run, str) and quota_percent_per_run.strip() == '':
+            quota_percent_per_run = None
+        if isinstance(quota_percent_total, str) and quota_percent_total.strip() == '':
+            quota_percent_total = None
         self.is_sandbox = is_sandbox is True or (isinstance(is_sandbox, str) and is_sandbox.lower() == 'true')
         self.select_fields_by_default = select_fields_by_default is True or (isinstance(select_fields_by_default, str) and select_fields_by_default.lower() == 'true')
         self.default_start_date = default_start_date
