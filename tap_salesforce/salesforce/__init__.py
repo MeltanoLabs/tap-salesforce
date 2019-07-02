@@ -202,6 +202,9 @@ class Salesforce():
             quota_percent_per_run = None
         if isinstance(quota_percent_total, str) and quota_percent_total.strip() == '':
             quota_percent_total = None
+
+        self.quota_percent_per_run = float(quota_percent_per_run) if quota_percent_per_run is not None else 25
+        self.quota_percent_total = float(quota_percent_total) if quota_percent_total is not None else 80
         self.is_sandbox = is_sandbox is True or (isinstance(is_sandbox, str) and is_sandbox.lower() == 'true')
         self.select_fields_by_default = select_fields_by_default is True or (isinstance(select_fields_by_default, str) and select_fields_by_default.lower() == 'true')
         self.default_start_date = default_start_date
