@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.4.24
+ * Mark json fields as `unsupported` instead of throwing exception.  If, in the future, we find streams with json fields that have records, we can consider supporting the json field type. [commit](https://github.com/singer-io/tap-salesforce/commit/85e3811b9cb5673e23cab8e7b011d2a3d3064d0f)
+
+## 1.4.23
+  * Protect against empty strings for quota config fields [commit](https://github.com/singer-io/tap-salesforce/commit/1133726e20af434d82af8761ba3ad006f49f0b42)
+
+## 1.4.22
+  * Filter out *ChangeEvent tables from discovery as neither REST nor BULK can sync them [#62](https://github.com/singer-io/tap-salesforce/pull/62)
+
+## 1.4.21
+  * Move the transformer outside of the record write-loop to quiet logging [#61](https://github.com/singer-io/tap-salesforce/pull/61)
+
+## 1.4.20
+  * (Bulk Rest API) Sync the second half of the date range After a timeout occurs and the date window is halved [#60](https://github.com/singer-io/tap-salesforce/pull/60)
+
+## 1.4.19
+  * (Bulk API) Removes failed jobs that don't exists in Salesforce from state when encountered [#57](https://github.com/singer-io/tap-salesforce/pull/57)
+  * (All APIs) Makes `BackgroundOperationResult` sync full table, since it cannot be sorted by `CreatedDate` [#58](https://github.com/singer-io/tap-salesforce/pull/58)
+  * Update version of `requests` to `2.20.0` in response to CVE 2018-18074 [#59](https://github.com/singer-io/tap-salesforce/pull/59)
+
 ## 1.4.18
   * Increases the `field_size_limit` on the CSV reader to enable larger fields coming through without error [#53](https://github.com/singer-io/tap-salesforce/pull/53)
 

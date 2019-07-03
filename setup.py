@@ -3,14 +3,14 @@
 from setuptools import setup
 
 setup(name='tap-salesforce',
-      version='1.4.18',
+      version='1.4.24',
       description='Singer.io tap for extracting data from the Salesforce API',
       author='Stitch',
       url='https://singer.io',
       classifiers=['Programming Language :: Python :: 3 :: Only'],
       py_modules=['tap_salesforce'],
       install_requires=[
-          'requests',
+          'requests==2.20.0',
           'singer-python==5.3.1',
           'xmltodict==0.11.0',
           'simple-salesforce',

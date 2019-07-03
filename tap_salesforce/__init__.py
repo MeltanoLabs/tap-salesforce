@@ -45,7 +45,14 @@ CONFIG = {
     'start_date': None
 }
 
+FORCED_FULL_TABLE = {
+    'BackgroundOperationResult' # Does not support ordering by CreatedDate
+}
+
 def get_replication_key(sobject_name, fields):
+    if sobject_name in FORCED_FULL_TABLE:
+        return None
+
     fields_list = [f['name'] for f in fields]
 
     if 'SystemModstamp' in fields_list:
@@ -130,7 +137,9 @@ def do_discover(sf):
     for sobject_name in objects_to_discover:
 
         # Skip blacklisted SF objects depending on the api_type in use
-        if sobject_name in sf.get_blacklisted_objects():
+        # ChangeEvent objects are not queryable via Bulk or REST (undocumented)
+        if sobject_name in sf.get_blacklisted_objects() \
+           or sobject_name.endswith("ChangeEvent"):
             continue
 
         sobject_description = sf.describe(sobject_name)
@@ -160,6 +169,7 @@ def do_discover(sf):
         # Loop over the object's fields
         for f in fields:
             field_name = f['name']
+            field_type = f['type']
 
             if field_name == "Id":
                 found_id_field = True
@@ -171,6 +181,12 @@ def do_discover(sf):
             if f['type'] == "address" and sf.api_type == tap_salesforce.salesforce.BULK_API_TYPE:
                 unsupported_fields.add(
                     (field_name, 'cannot query compound address fields with bulk API'))
+
+            # we haven't been able to observe any records with a json field, so we
+            # are marking it as unavailable until we have an example to work with
+            if f['type'] == "json":
+                unsupported_fields.add(
+                    (field_name, 'do not currently support json fields - please contact support'))
 
             # Blacklisted fields are dependent on the api_type being used
             field_pair = (sobject_name, field_name)
