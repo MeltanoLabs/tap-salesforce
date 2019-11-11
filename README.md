@@ -6,31 +6,57 @@
 
 [Singer](https://www.singer.io/) tap that extracts data from a [Salesforce](https://www.salesforce.com/) database and produces JSON-formatted data following the [Singer spec](https://github.com/singer-io/getting-started/blob/master/SPEC.md).
 
-```bash
-$ mkvirtualenv -p python3 tap-salesforce
-$ pip install tap-salesforce
-$ tap-salesforce --config config.json --discover
-$ tap-salesforce --config config.json --properties properties.json --state state.json
-```
+This is a forked version of [tap-salesforce (v1.4.24)](https://github.com/singer-io/tap-salesforce), maintained by the Meltano team.
+
+Main differences from the original version:
+
+- Support for `username/password/security_token` authentication
+- Support for concurrent execution (8 threads by default) when accessing different API endpoints to speed up the extraction process
 
 # Quickstart
 
 ## Install the tap
 
-```
-> pip install tap-salesforce
+This version of `tap-salesforce` is not available on PyPi, so you have to fetch it directly from the Meltano maintained project:
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install git+https://gitlab.com/meltano/tap-salesforce.git
 ```
 
 ## Create a Config file
 
+**Required**
+```
+{
+  "api_type": "BULK",
+  "select_fields_by_default": true,
+}
+```
+
+**Required for OAuth based authentication**
 ```
 {
   "client_id": "secret_client_id",
   "client_secret": "secret_client_secret",
   "refresh_token": "abc123",
+}
+```
+
+**Required for username/password based authentication**
+```
+{
+  "username": "Account Email",
+  "password": "Account Password",
+  "security_token": "Security Token",
+}
+```
+
+**Optional**
+```
+{
   "start_date": "2017-11-02T00:00:00Z",
-  "api_type": "BULK",
-  "select_fields_by_default": true,
   "state_message_threshold": 1000,
   "max_workers": 8
 }
@@ -51,7 +77,7 @@ The `max_workers` value is used to set the maximum number of threads used in ord
 To run discovery mode, execute the tap with the config file.
 
 ```
-> tap-salesforce --config config.json --discover > properties.json
+tap-salesforce --config config.json --discover > properties.json
 ```
 
 ## Sync Data
@@ -59,7 +85,7 @@ To run discovery mode, execute the tap with the config file.
 To sync data, select fields in the `properties.json` output and run the tap.
 
 ```
-> tap-salesforce --config config.json --properties properties.json [--state state.json]
+tap-salesforce --config config.json --properties properties.json [--state state.json]
 ```
 
 Copyright &copy; 2017 Stitch
