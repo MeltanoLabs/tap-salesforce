@@ -15,7 +15,6 @@ OAuthCredentials = namedtuple('OAuthCredentials', (
 ))
 
 PasswordCredentials = namedtuple('PasswordCredentials', (
-    "client_id",
     "username",
     "password",
     "security_token"
