@@ -13,7 +13,7 @@ setup(name='tap-salesforce',
           'requests==2.20.0',
           'singer-python==5.3.1',
           'xmltodict==0.11.0',
-          'simple-salesforce',
+          'simple-salesforce<1.0', # v1.0 requires `requests==2.22.0`
           # fix version conflicts, see https://gitlab.com/meltano/meltano/issues/193
           'idna==2.7',
           'cryptography',
