@@ -195,7 +195,6 @@ class Salesforce():
                  select_fields_by_default=None,
                  default_start_date=None,
                  api_type=None):
-        self.auth = SalesforceAuth.from_credentials(credentials)
         self.api_type = api_type.upper() if api_type else None
         self.session = requests.Session()
         if isinstance(quota_percent_per_run, str) and quota_percent_per_run.strip() == '':
@@ -213,6 +212,8 @@ class Salesforce():
         self.login_timer = None
         self.data_url = "{}/services/data/v41.0/{}"
         self.pk_chunking = False
+
+        self.auth = SalesforceAuth.from_credentials(credentials, is_sandbox=self.is_sandbox)
 
         # validate start_date
         singer_utils.strptime(default_start_date)
