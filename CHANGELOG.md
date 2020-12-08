@@ -1,5 +1,9 @@
 # Changelog
 
+## meltano.1.4.25
+
+  * [#10](https://gitlab.com/meltano/tap-salesforce/-/issues/10) Fix broken `is_sandbox` setting
+
 ## 1.4.24
  * Mark json fields as `unsupported` instead of throwing exception.  If, in the future, we find streams with json fields that have records, we can consider supporting the json field type. [commit](https://github.com/singer-io/tap-salesforce/commit/85e3811b9cb5673e23cab8e7b011d2a3d3064d0f)
 
