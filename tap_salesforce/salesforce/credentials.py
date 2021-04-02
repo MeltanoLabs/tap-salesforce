@@ -106,6 +106,7 @@ class SalesforceAuthOAuth(SalesforceAuth):
             LOGGER.info("Starting new login timer")
             self.login_timer = threading.Timer(self.REFRESH_TOKEN_EXPIRATION_PERIOD, self.login)
             self.login_timer.start()
+            return self.login_timer
 
 
 class SalesforceAuthPassword(SalesforceAuth):
