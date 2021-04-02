@@ -1,5 +1,9 @@
 # Changelog
 
+## meltano.1.4.26
+
+  * [#11](https://gitlab.com/meltano/tap-salesforce/-/issues/11) Don't run indefinitely when using OAuth
+
 ## meltano.1.4.25
 
   * [#10](https://gitlab.com/meltano/tap-salesforce/-/issues/10) Fix broken `is_sandbox` setting
