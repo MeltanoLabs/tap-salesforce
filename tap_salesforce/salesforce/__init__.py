@@ -250,7 +250,7 @@ class Salesforce():
             raise TapSalesforceQuotaExceededException(partial_message)
 
     def login(self):
-        self.auth.login()
+        self.login_timer = self.auth.login()
 
     @property
     def instance_url(self):
