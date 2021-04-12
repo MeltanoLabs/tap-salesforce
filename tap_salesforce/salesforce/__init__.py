@@ -209,7 +209,6 @@ class Salesforce():
         self.default_start_date = default_start_date
         self.rest_requests_attempted = 0
         self.jobs_completed = 0
-        self.login_timer = None
         self.data_url = "{}/services/data/v41.0/{}"
         self.pk_chunking = False
 
@@ -250,7 +249,7 @@ class Salesforce():
             raise TapSalesforceQuotaExceededException(partial_message)
 
     def login(self):
-        self.login_timer = self.auth.login()
+        self.auth.login()
 
     @property
     def instance_url(self):

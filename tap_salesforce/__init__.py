@@ -413,8 +413,8 @@ def main_impl():
                 LOGGER.debug(
                     "Replication used %s Bulk API jobs towards the Salesforce quota.",
                     sf.jobs_completed)
-            if sf.login_timer:
-                sf.login_timer.cancel()
+            if sf.auth.login_timer:
+                sf.auth.login_timer.cancel()
 
 
 def main():
