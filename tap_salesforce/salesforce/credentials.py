@@ -37,6 +37,7 @@ class SalesforceAuth():
         self._access_token = None
         self._instance_url = None
         self._auth_header = None
+        self.login_timer = None
 
     def login(self):
         """Attempt to login and set the `instance_url` and `access_token` on success."""
@@ -106,7 +107,6 @@ class SalesforceAuthOAuth(SalesforceAuth):
             LOGGER.info("Starting new login timer")
             self.login_timer = threading.Timer(self.REFRESH_TOKEN_EXPIRATION_PERIOD, self.login)
             self.login_timer.start()
-            return self.login_timer
 
 
 class SalesforceAuthPassword(SalesforceAuth):
