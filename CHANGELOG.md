@@ -1,5 +1,9 @@
 # Changelog
 
+## meltano.1.4.27
+
+  * [#11](https://gitlab.com/meltano/tap-salesforce/-/issues/11) Don't run indefinitely when using OAuth and job runs for more than 15 minutes
+
 ## meltano.1.4.26
 
   * [#11](https://gitlab.com/meltano/tap-salesforce/-/issues/11) Don't run indefinitely when using OAuth
