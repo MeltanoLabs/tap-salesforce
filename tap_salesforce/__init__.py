@@ -3,6 +3,8 @@ import asyncio
 import concurrent.futures
 import json
 import sys
+from copy import deepcopy
+
 import singer
 import singer.utils as singer_utils
 from singer import metadata, metrics
@@ -293,6 +295,120 @@ def do_discover(sf):
     result = {'streams': entries}
     json.dump(result, sys.stdout, indent=4)
 
+
+def is_object_type(property_schema):
+    """
+    Return true if the JSON Schema type is an object or None if detection fails.
+    This code is based on the Meltano SDK:
+    https://github.com/meltano/sdk/blob/c9c0967b0caca51fe7c87082f9e7c5dd54fa5dfa/singer_sdk/helpers/_typing.py#L50
+    """
+    if "anyOf" not in property_schema and "type" not in property_schema:
+        return None  # Could not detect data type
+    for property_type in property_schema.get("anyOf", [property_schema.get("type")]):
+        if "object" in property_type or property_type == "object":
+            return True
+    return False
+
+
+def is_property_selected(  # noqa: C901  # ignore 'too complex'
+        stream_name,
+        metadata_map,
+        breadcrumb
+) -> bool:
+    """
+    Return True if the property is selected for extract.
+    Breadcrumb of `[]` or `None` indicates the stream itself. Otherwise, the
+    breadcrumb is the path to a property within the stream.
+
+    The code is based on the Meltano SDK:
+    https://github.com/meltano/sdk/blob/c9c0967b0caca51fe7c87082f9e7c5dd54fa5dfa/singer_sdk/helpers/_catalog.py#L63
+    """
+    breadcrumb = breadcrumb or ()
+    if isinstance(breadcrumb, str):
+        breadcrumb = tuple([breadcrumb])
+
+    if not metadata:
+        # Default to true if no metadata to say otherwise
+        return True
+
+    md_entry = metadata_map.get(breadcrumb, {})
+    parent_value = None
+    if len(breadcrumb) > 0:
+        parent_breadcrumb = tuple(list(breadcrumb)[:-2])
+        parent_value = is_property_selected(
+            stream_name, metadata_map, parent_breadcrumb
+        )
+    if parent_value is False:
+        return parent_value
+
+    selected = md_entry.get("selected")
+    selected_by_default = md_entry.get("selected-by-default")
+    inclusion = md_entry.get("inclusion")
+
+    if inclusion == "unsupported":
+        if selected is True:
+            LOGGER.debug(
+                "Property '%s' was selected but is not supported. "
+                "Ignoring selected==True input.",
+                ":".join(breadcrumb),
+            )
+        return False
+
+    if inclusion == "automatic":
+        if selected is False:
+            LOGGER.debug(
+                "Property '%s' was deselected while also set "
+                "for automatic inclusion. Ignoring selected==False input.",
+                ":".join(breadcrumb),
+            )
+        return True
+
+    if selected is not None:
+        return selected
+
+    if selected_by_default is not None:
+        return selected_by_default
+
+    LOGGER.debug(
+        "Selection metadata omitted for '%s':'%s'. "
+        "Using parent value of selected=%s.",
+        stream_name,
+        breadcrumb,
+        parent_value,
+    )
+    return parent_value or False
+
+
+def pop_deselected_schema(
+    schema,
+    stream_name,
+    breadcrumb,
+    metadata_map
+):
+    """Remove anything from schema that is not selected.
+    Walk through schema, starting at the index in breadcrumb, recursively updating in
+    place.
+    This code is based on https://github.com/meltano/sdk/blob/c9c0967b0caca51fe7c87082f9e7c5dd54fa5dfa/singer_sdk/helpers/_catalog.py#L146
+    """
+    for property_name, val in list(schema.get("properties", {}).items()):
+        property_breadcrumb = tuple(
+            list(breadcrumb) + ["properties", property_name]
+        )
+        selected = is_property_selected(
+            stream_name, metadata_map, property_breadcrumb
+        )
+        LOGGER.info(selected)
+        if not selected:
+            schema["properties"].pop(property_name)
+            continue
+
+        if is_object_type(val):
+            # call recursively in case any subproperties are deselected.
+            pop_deselected_schema(
+                val, stream_name, property_breadcrumb, metadata_map
+            )
+
+
 async def sync_catalog_entry(sf, catalog_entry, state):
     stream_version = get_stream_version(catalog_entry, state)
     stream = catalog_entry['stream']
@@ -314,13 +430,17 @@ async def sync_catalog_entry(sf, catalog_entry, state):
 
     singer.write_state(state)
     key_properties = metadata.to_map(catalog_entry['metadata']).get((), {}).get('table-key-properties')
+
+    # Filter the schema for selected fields
+    schema = deepcopy(catalog_entry['schema'])
+    pop_deselected_schema(schema, stream_name, (), mdata)
+
     singer.write_schema(
         stream,
-        catalog_entry['schema'],
+        schema,
         key_properties,
         replication_key,
         stream_alias)
-
     loop = asyncio.get_event_loop()
 
     job_id = singer.get_bookmark(state, catalog_entry['tap_stream_id'], 'JobID')
