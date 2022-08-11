@@ -397,7 +397,7 @@ def pop_deselected_schema(
         selected = is_property_selected(
             stream_name, metadata_map, property_breadcrumb
         )
-        LOGGER.info(selected)
+        LOGGER.info(stream_name + '.' + property_name + ' - ' + str(selected))
         if not selected:
             schema["properties"].pop(property_name)
             continue
