@@ -423,7 +423,7 @@ async def sync_catalog_entry(sf, catalog_entry, state):
     mdata = metadata.to_map(catalog_entry['metadata'])
 
     if not stream_is_selected(mdata):
-        LOGGER.info("%s: Skipping - not selected", stream_name)
+        LOGGER.debug("%s: Skipping - not selected", stream_name)
         return
 
     LOGGER.info("%s: Starting", stream_name)
