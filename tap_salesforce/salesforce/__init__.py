@@ -34,7 +34,8 @@ STRING_TYPES = set([
     'email',
     'complexvalue',  # TODO: Unverified
     'masterrecord',
-    'datacategorygroupreference'
+    'datacategorygroupreference',
+    'base64'
 ])
 
 NUMBER_TYPES = set([
@@ -49,7 +50,6 @@ DATE_TYPES = set([
 ])
 
 BINARY_TYPES = set([
-    'base64',
     'byte'
 ])
 
