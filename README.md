@@ -12,6 +12,7 @@ Main differences from the original version:
 
 - Support for `username/password/security_token` authentication
 - Support for concurrent execution (8 threads by default) when accessing different API endpoints to speed up the extraction process
+- Support for much faster discovery
 
 # Quickstart
 
@@ -58,7 +59,8 @@ pip install git+https://gitlab.com/meltano/tap-salesforce.git
 {
   "start_date": "2017-11-02T00:00:00Z",
   "state_message_threshold": 1000,
-  "max_workers": 8
+  "max_workers": 8,
+  "streams_to_discover": ["Lead", "LeadHistory"]
 }
 ```
 
@@ -71,6 +73,10 @@ The `api_type` is used to switch the behavior of the tap between using Salesforc
 The `state_message_threshold` is used to throttle how often STATE messages are generated when the tap is using the "REST" API. This is a balance between not slowing down execution due to too many STATE messages produced and how many records must be fetched again if a tap fails unexpectedly. Defaults to 1000 (generate a STATE message every 1000 records).
 
 The `max_workers` value is used to set the maximum number of threads used in order to concurrently extract data for streams. Defaults to 8 (extract data for 8 streams in paralel).
+
+The `streams_to_discover` value may contain a list of Salesforce streams (each ending up in a target table) for which the discovery is handled.
+By default, discovery is handled for all existing streams, which can take several minutes. With just several entities which users typically need it is running few seconds.
+The disadvantage is that you have to keep this list in sync with the `select` section, where you specify all properties(each ending up in a table column).
 
 ## Run Discovery
 

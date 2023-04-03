@@ -124,11 +124,16 @@ def create_property_schema(field, mdata):
 
 
 # pylint: disable=too-many-branches,too-many-statements
-def do_discover(sf):
-    """Describes a Salesforce instance's objects and generates a JSON schema for each field."""
-    global_description = sf.describe()
+def do_discover(sf: Salesforce, streams: list[str]):
+    if not streams:
+        """Describes a Salesforce instance's objects and generates a JSON schema for each field."""
+        LOGGER.info(f"Start discovery for all streams")
+        global_description = sf.describe()
+        objects_to_discover = {o['name'] for o in global_description['sobjects']}
+    else:
+        LOGGER.info(f"Start discovery: {streams=}")
+        objects_to_discover = streams
 
-    objects_to_discover = {o['name'] for o in global_description['sobjects']}
     key_properties = ['Id']
 
     sf_custom_setting_objects = []
@@ -518,7 +523,7 @@ def main_impl():
         sf.login()
 
         if args.discover:
-            do_discover(sf)
+            do_discover(sf, CONFIG.get("streams_to_discover", []))
         elif args.properties or args.catalog:
             catalog = args.properties or args.catalog.to_dict()
             state = build_state(args.state, catalog)
