@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 import asyncio
 import concurrent.futures
 import json
 import sys
 from copy import deepcopy
-from typing import List
 
 import singer
 import singer.utils as singer_utils
@@ -125,7 +125,7 @@ def create_property_schema(field, mdata):
 
 
 # pylint: disable=too-many-branches,too-many-statements
-def do_discover(sf: Salesforce, streams: List[str]):
+def do_discover(sf: Salesforce, streams: list[str]):
     if not streams:
         """Describes a Salesforce instance's objects and generates a JSON schema for each field."""
         LOGGER.info(f"Start discovery for all streams")
