@@ -22,7 +22,7 @@ This version of `tap-salesforce` is not available on PyPi, so you have to fetch 
 ```bash
 python3 -m venv venv
 source venv/bin/activate
-pip install git+https://gitlab.com/meltano/tap-salesforce.git
+pip install git+https://github.com/MeltanoLabs/tap-salesforce.git
 ```
 
 ## Create a Config file
