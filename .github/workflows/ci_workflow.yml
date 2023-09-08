@@ -1,0 +1,57 @@
+### A CI workflow template that runs linting and python testing
+
+name: Test tap-salesforce
+
+on: [push]
+
+jobs:
+  linting:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # Only lint using the primary version used for dev
+        python-version: ["3.9"]
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Install pipx and Poetry
+      run: |
+        pip install pipx poetry
+    - name: Run lint command from tox.ini
+      run: |
+        pipx run tox -e lint
+
+  pytest:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+    strategy:
+      matrix:
+        python-version: ["3.9"]
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Install Poetry
+      run: |
+        pip install poetry
+    - name: Install dependencies
+      run: |
+        poetry install
+    - name: Test with pytest
+      id: test_pytest
+      continue-on-error: false
+      env:
+         TAP_SALESFORCE_CLIENT_ID: ${{ secrets.client_id }}
+         TAP_SALESFORCE_CLIENT_SECRET: ${{ secrets.client_secret }}
+         TAP_SALESFORCE_AUTH_USERNAME: ${{ secrets.username }}
+         TAP_SALESFORCE_AUTH_PASSWORD: ${{ secrets.password }}
+         TAP_SALESFORCE_AUTH_FLOW: ${{ secrets.domain }}
+         TAP_SALESFORCE_DOMAIN: ${{ secrets.domain }}
+      run: |
+        poetry run pytest --capture=no
