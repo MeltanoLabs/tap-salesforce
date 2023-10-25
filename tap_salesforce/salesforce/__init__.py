@@ -228,10 +228,13 @@ class Salesforce():
 
         # validate start_date
         self.default_start_date = (
-            singer_utils.strptime(default_start_date)
+            singer_utils.strptime_to_utc(default_start_date)
             if default_start_date
             else (singer_utils.now() - timedelta(weeks=4))
         ).isoformat()
+
+        if default_start_date:
+            LOGGER.info("Parsed start date '%s' from value '%s'", self.default_start_date, default_start_date)
 
     # pylint: disable=anomalous-backslash-in-string,line-too-long
     def check_rest_quota_usage(self, headers):
