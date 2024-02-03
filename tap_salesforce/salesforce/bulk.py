@@ -49,8 +49,12 @@ class Bulk():
     def query(self, catalog_entry, state):
         self.check_bulk_quota_usage()
 
-        for record in self._bulk_query(catalog_entry, state):
-            yield record
+        if self.sf.pk_chunking:
+            for record in self._bulk_query_with_pk_chunking(catalog_entry, state):
+                yield record
+        else:
+            for record in self._bulk_query(catalog_entry, state):
+                yield record
 
         self.sf.jobs_completed += 1
 
@@ -99,34 +103,37 @@ class Bulk():
         batch_status = self._poll_on_batch_status(job_id, batch_id)
 
         if batch_status['state'] == 'Failed':
-            if "QUERY_TIMEOUT" in batch_status['stateMessage']:
-                batch_status = self._bulk_query_with_pk_chunking(catalog_entry, start_date)
-                job_id = batch_status['job_id']
-
+            message = batch_status['stateMessage']
+            if "QUERY_TIMEOUT" in message:
+                LOGGER.info("Retrying Bulk Query for %s with PK Chunking: %s", catalog_entry['stream'], message)
                 # Set pk_chunking to True to indicate that we should write a bookmark differently
                 self.sf.pk_chunking = True
-
-                # Add the bulk Job ID and its batches to the state so it can be resumed if necessary
-                tap_stream_id = catalog_entry['tap_stream_id']
-                state = singer.write_bookmark(state, tap_stream_id, 'JobID', job_id)
-                state = singer.write_bookmark(state, tap_stream_id, 'BatchIDs', batch_status['completed'][:])
-
-                for completed_batch_id in batch_status['completed']:
-                    for result in self.get_batch_results(job_id, completed_batch_id, catalog_entry):
-                        yield result
-                    # Remove the completed batch ID and write state
-                    state['bookmarks'][catalog_entry['tap_stream_id']]["BatchIDs"].remove(completed_batch_id)
-                    LOGGER.info("Finished syncing batch %s. Removing batch from state.", completed_batch_id)
-                    LOGGER.info("Batches to go: %d", len(state['bookmarks'][catalog_entry['tap_stream_id']]["BatchIDs"]))
-                    singer.write_state(state)
+                self._bulk_query_with_pk_chunking(catalog_entry, state)
             else:
-                raise TapSalesforceException(batch_status['stateMessage'])
+                raise TapSalesforceException(message)
         else:
             for result in self.get_batch_results(job_id, batch_id, catalog_entry):
                 yield result
 
-    def _bulk_query_with_pk_chunking(self, catalog_entry, start_date):
-        LOGGER.info("Retrying Bulk Query with PK Chunking")
+    def _bulk_query_with_pk_chunking(self, catalog_entry, state):
+        start_date = self.sf.get_start_date(state, catalog_entry)
+        batch_status = self._perform_pk_chunking_query(catalog_entry, start_date)
+        job_id = batch_status['job_id']
+
+        # Add the bulk Job ID and its batches to the state so it can be resumed if necessary
+        tap_stream_id = catalog_entry['tap_stream_id']
+        state = singer.write_bookmark(state, tap_stream_id, 'JobID', job_id)
+        state = singer.write_bookmark(state, tap_stream_id, 'BatchIDs', batch_status['completed'][:])
+
+        for completed_batch_id in batch_status['completed']:
+            for result in self.get_batch_results(job_id, completed_batch_id, catalog_entry):
+                yield result
+            # Remove the completed batch ID and write state
+            self._complete_batch(state, tap_stream_id, completed_batch_id)
+            singer.write_state(state)
+
+    def _perform_pk_chunking_query(self, catalog_entry, start_date):
+        LOGGER.info("Making Bulk Query for %s with PK Chunking", catalog_entry['stream'])
 
         # Create a new job
         job_id = self._create_job(catalog_entry, True)
@@ -189,6 +196,17 @@ class Bulk():
         batch = xmltodict.parse(resp.text)
 
         return batch['batchInfo']['id']
+
+    def _complete_batch(self, state, tap_stream_id, batch_id):
+        stream = state['bookmarks'][tap_stream_id]
+        batch_ids = stream['BatchIDs']
+        batch_ids.remove(batch_id)
+        LOGGER.info("Finished syncing batch %s. Removing batch from state.", batch_id)
+        LOGGER.info("Batches to go: %d", len(batch_ids))
+        if len(batch_ids) <= 0:
+            stream.pop('BatchIDs', None)
+            stream.pop('JobID', None)
+            stream.pop('JobHighestBookmarkSeen', None)
 
     def _poll_on_pk_chunked_batch_status(self, job_id):
         batches = self._get_batches(job_id)
