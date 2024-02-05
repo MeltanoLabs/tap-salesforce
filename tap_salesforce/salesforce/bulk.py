@@ -49,7 +49,7 @@ class Bulk():
     def query(self, catalog_entry, state):
         self.check_bulk_quota_usage()
 
-        if self.sf.pk_chunking:
+        if catalog_entry['stream'] in self.sf.pk_chunking:
             for record in self._bulk_query_with_pk_chunking(catalog_entry, state):
                 yield record
         else:

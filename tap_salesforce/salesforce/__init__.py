@@ -207,7 +207,7 @@ class Salesforce():
                  select_fields_by_default=None,
                  default_start_date=None,
                  api_type=None,
-                 pk_chunking=False):
+                 pk_chunking=[]):
         self.api_type = api_type.upper() if api_type else None
         self.session = requests.Session()
         if isinstance(quota_percent_per_run, str) and quota_percent_per_run.strip() == '':
