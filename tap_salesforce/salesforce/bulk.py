@@ -48,8 +48,9 @@ class Bulk():
 
     def query(self, catalog_entry, state):
         self.check_bulk_quota_usage()
+        chunked_tables = self.sf.pk_chunking.get('tables', [])
 
-        if catalog_entry['stream'] in self.sf.pk_chunking:
+        if catalog_entry['stream'] in chunked_tables:
             for record in self._bulk_query_with_pk_chunking(catalog_entry, state):
                 yield record
         else:
@@ -107,7 +108,7 @@ class Bulk():
             if "QUERY_TIMEOUT" in message:
                 LOGGER.info("Retrying Bulk Query for %s with PK Chunking: %s", catalog_entry['stream'], message)
                 # Set pk_chunking to True to indicate that we should write a bookmark differently
-                self.sf.pk_chunking = True
+                self.sf.pk_chunking['enabled'] = True
                 self._bulk_query_with_pk_chunking(catalog_entry, state)
             else:
                 raise TapSalesforceException(message)
@@ -161,9 +162,10 @@ class Bulk():
         headers['Sforce-Disable-Batch-Retry'] = "true"
 
         if pk_chunking:
-            LOGGER.info("ADDING PK CHUNKING HEADER")
+            chunk_size = self.sf.pk_chunking.get('chunk_size', DEFAULT_CHUNK_SIZE)
+            LOGGER.info("Adding PK chunking header w/chunk size: %d", chunk_size)
 
-            headers['Sforce-Enable-PKChunking'] = "true; chunkSize={}".format(DEFAULT_CHUNK_SIZE)
+            headers['Sforce-Enable-PKChunking'] = "true; chunkSize={}".format(chunk_size)
 
             # If the stream ends with 'CleanInfo' or 'History', we can PK Chunk on the object's parent
             if any(catalog_entry['stream'].endswith(suffix) for suffix in ["CleanInfo", "History"]):
@@ -203,8 +205,8 @@ class Bulk():
         stream = state['bookmarks'][tap_stream_id]
         batch_ids = stream['BatchIDs']
         batch_ids.remove(batch_id)
-        LOGGER.info("Finished syncing batch %s. Removing batch from state.", batch_id)
-        LOGGER.info("Batches to go: %d", len(batch_ids))
+        LOGGER.info("%s: finished syncing batch %s. Removing batch from state.", tap_stream_id, batch_id)
+        LOGGER.info("%s: batches to go %d", tap_stream_id, len(batch_ids))
         if len(batch_ids) <= 0:
             stream.pop('BatchIDs', None)
             stream.pop('JobID', None)
@@ -222,7 +224,8 @@ class Bulk():
                 failed_batches = [b['id'] for b in batches if b['state'] == "Failed"]
                 return {'completed': completed_batches, 'failed': failed_batches, 'all': batches}
             else:
-                time.sleep(PK_CHUNKED_BATCH_STATUS_POLLING_SLEEP)
+                sleep_time = self.sf.pk_chunking.get('polling_sleep_time', PK_CHUNKED_BATCH_STATUS_POLLING_SLEEP)
+                time.sleep(sleep_time)
                 batches = self._get_batches(job_id)
 
     def _poll_on_batch_status(self, job_id, batch_id):
