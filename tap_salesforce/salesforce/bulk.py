@@ -144,6 +144,8 @@ class Bulk():
         batch_status['job_id'] = job_id
 
         if batch_status['failed']:
+            for batch in [b for b in batch_status['all'] if b['state'] == "Failed"]:
+                LOGGER.info(batch['stateMessage'])
             raise TapSalesforceException("One or more batches failed during PK chunked job")
 
         # Close the job after all the batches are complete
@@ -218,7 +220,7 @@ class Bulk():
             if not queued_batches and not in_progress_batches:
                 completed_batches = [b['id'] for b in batches if b['state'] == "Completed"]
                 failed_batches = [b['id'] for b in batches if b['state'] == "Failed"]
-                return {'completed': completed_batches, 'failed': failed_batches}
+                return {'completed': completed_batches, 'failed': failed_batches, 'all': batches}
             else:
                 time.sleep(PK_CHUNKED_BATCH_STATUS_POLLING_SLEEP)
                 batches = self._get_batches(job_id)
