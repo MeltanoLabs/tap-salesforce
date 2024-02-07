@@ -132,7 +132,7 @@ def sync_records(sf, catalog_entry, state, counter, state_msg_threshold):
 
         replication_key_value = replication_key and singer_utils.strptime_with_tz(rec[replication_key])
 
-        if sf.pk_chunking:
+        if sf.pk_chunking.get('enabled'):
             if replication_key_value and replication_key_value <= start_time and replication_key_value > chunked_bookmark:
                 # Replace the highest seen bookmark and save the state in case we need to resume later
                 chunked_bookmark = singer_utils.strptime_with_tz(rec[replication_key])
@@ -164,7 +164,7 @@ def sync_records(sf, catalog_entry, state, counter, state_msg_threshold):
             state, catalog_entry['tap_stream_id'], 'version', None)
 
     # If pk_chunking is set, only write a bookmark at the end
-    if sf.pk_chunking:
+    if sf.pk_chunking.get('enabled'):
         # Write a bookmark with the highest value we've seen
         state = singer.write_bookmark(
             state,
