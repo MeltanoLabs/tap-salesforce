@@ -149,11 +149,14 @@ def raise_for_status(resp):
         is not the best error that Salesforce could return. It also appears
         that this error is ephemeral and resolved after retries.
     """
-    if resp.status_code == 406 and 'CustomNotAcceptable' in resp.reason:
+    if resp.status_code != 200:
         err_msg = (
             f"{resp.status_code} Client Error: {resp.reason} "
             f"for url: {resp.url}"
         )
+        LOGGER.warning(err_msg)
+
+    if resp.status_code == 406 and 'CustomNotAcceptable' in resp.reason:
         raise SFDCCustomNotAcceptableError(err_msg)
     else:
         resp.raise_for_status()
