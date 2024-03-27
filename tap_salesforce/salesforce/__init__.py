@@ -11,7 +11,8 @@ from tap_salesforce.salesforce.bulk import Bulk
 from tap_salesforce.salesforce.rest import Rest
 from tap_salesforce.salesforce.exceptions import (
     TapSalesforceException,
-    TapSalesforceQuotaExceededException)
+    TapSalesforceQuotaExceededException,
+    SFDCCustomNotAcceptableError)
 from tap_salesforce.salesforce.credentials import SalesforceAuth
 
 
@@ -137,6 +138,28 @@ QUERY_INCOMPATIBLE_SALESFORCE_OBJECTS = set(['DataType',
 
 def log_backoff_attempt(details):
     LOGGER.info("ConnectionError detected, triggering backoff: %d try", details.get("tries"))
+
+
+def raise_for_status(resp):
+    """
+    Adds additional handling of HTTP Errors.
+
+    `CustomNotAcceptable` is returned during discovery with status code 406.
+        This error does not seem to be documented on Salesforce, and possibly
+        is not the best error that Salesforce could return. It also appears
+        that this error is ephemeral and resolved after retries.
+    """
+    if resp.status_code != 200:
+        err_msg = (
+            f"{resp.status_code} Client Error: {resp.reason} "
+            f"for url: {resp.url}"
+        )
+        LOGGER.warning(err_msg)
+
+    if resp.status_code == 406 and 'CustomNotAcceptable' in resp.reason:
+        raise SFDCCustomNotAcceptableError(err_msg)
+    else:
+        resp.raise_for_status()
 
 
 def field_to_property_schema(field, mdata):
@@ -269,7 +292,7 @@ class Salesforce():
 
     # pylint: disable=too-many-arguments
     @backoff.on_exception(backoff.expo,
-                          requests.exceptions.ConnectionError,
+                          (requests.exceptions.ConnectionError, SFDCCustomNotAcceptableError),
                           max_tries=10,
                           factor=2,
                           on_backoff=log_backoff_attempt)
@@ -283,7 +306,7 @@ class Salesforce():
         else:
             raise TapSalesforceException("Unsupported HTTP method")
 
-        resp.raise_for_status()
+        raise_for_status(resp)
 
         if resp.headers.get('Sforce-Limit-Info') is not None:
             self.rest_requests_attempted += 1
