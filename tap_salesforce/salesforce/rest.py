@@ -28,7 +28,7 @@ class Rest():
             end_date=None,
             retries=MAX_RETRIES):
         params = {"q": query}
-        url = "{}/services/data/v53.0/queryAll".format(self.sf.instance_url)
+        url = "{}/services/data/v60.0/queryAll".format(self.sf.instance_url)
         headers = self.sf.auth.rest_headers
 
         sync_start = singer_utils.now()
