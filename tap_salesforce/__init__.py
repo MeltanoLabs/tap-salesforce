@@ -186,7 +186,7 @@ def do_discover(sf: Salesforce, streams: list[str]):
                 f, mdata)
 
             # Compound Address fields cannot be queried by the Bulk API
-            if f['type'] == "address" and sf.api_type == tap_salesforce.salesforce.BULK_API_TYPE:
+            if f['type'] in ("address", "location") and sf.api_type == tap_salesforce.salesforce.BULK_API_TYPE:
                 unsupported_fields.add(
                     (field_name, 'cannot query compound address fields with bulk API'))
 
