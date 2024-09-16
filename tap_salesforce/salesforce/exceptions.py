@@ -20,3 +20,14 @@ class SFDCCustomNotAcceptableError(Exception):
     requests.exceptions.HTTPError: 406 Client Error: CustomNotAcceptable for 
     url: https://XXX.salesforce.com/services/data/v53.0/sobjects/XXX/describe
     """
+
+class RetriableSalesforceAuthenticationError(Exception):
+    """
+    A general classification for SFDC HTTP Authentication Errors.
+
+    The class is used to identify cases in which authentication should be
+    retried. It is primarily setup to handle simultaneous token requests during
+    the refresh token flow which returns the 400 Bad Request response. However,
+    it could be further expanded to handle other authentication errors that
+    could require retries.
+    """
