@@ -141,14 +141,3 @@ class SalesforceAuthPassword(SalesforceAuth):
 
         self._access_token, host = login
         self._instance_url = "https://" + host
-
-if __name__ == "__main__":
-    sfdc_auth = SalesforceAuth.from_credentials(
-        is_sandbox=False,
-        credentials= parse_credentials({
-            "client_id": "secret_client_id",
-            "client_secret": "secret_client_secret",
-            "refresh_token": "abc123",
-        }),
-    )
-    sfdc_auth.login()
