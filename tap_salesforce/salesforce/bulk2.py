@@ -37,7 +37,7 @@ class Bulk2():
         url = self.bulk_url.format(self.sf.instance_url)
         start_date = self.sf.get_start_date(state, catalog_entry)
 
-        query = self.sf._build_query_string(catalog_entry, start_date, order_by_clause=True)
+        query = self.sf._build_query_string(catalog_entry, start_date, order_by_clause=False)
 
         body = {
             "operation": "query",
