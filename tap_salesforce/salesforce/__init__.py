@@ -9,6 +9,7 @@ import singer.utils as singer_utils
 from singer import metadata, metrics
 
 from tap_salesforce.salesforce.bulk import Bulk
+from tap_salesforce.salesforce.bulk2 import Bulk2
 from tap_salesforce.salesforce.rest import Rest
 from tap_salesforce.salesforce.exceptions import (
     TapSalesforceException,
@@ -20,6 +21,7 @@ from tap_salesforce.salesforce.credentials import SalesforceAuth
 LOGGER = singer.get_logger()
 
 BULK_API_TYPE = "BULK"
+BULK2_API_TYPE = "BULK2"
 REST_API_TYPE = "REST"
 
 STRING_TYPES = set([
@@ -388,6 +390,9 @@ class Salesforce():
         if self.api_type == BULK_API_TYPE:
             bulk = Bulk(self)
             return bulk.query(catalog_entry, state)
+        elif self.api_type == BULK2_API_TYPE:
+            bulk = Bulk2(self)
+            return bulk.query(catalog_entry, state)
         elif self.api_type == REST_API_TYPE:
             rest = Rest(self)
             return rest.query(catalog_entry, state)
@@ -397,7 +402,7 @@ class Salesforce():
                     self.api_type))
 
     def get_blacklisted_objects(self):
-        if self.api_type == BULK_API_TYPE:
+        if self.api_type in [BULK_API_TYPE, BULK2_API_TYPE]:
             return UNSUPPORTED_BULK_API_SALESFORCE_OBJECTS.union(
                 QUERY_RESTRICTED_SALESFORCE_OBJECTS).union(QUERY_INCOMPATIBLE_SALESFORCE_OBJECTS)
         elif self.api_type == REST_API_TYPE:
@@ -409,7 +414,7 @@ class Salesforce():
 
     # pylint: disable=line-too-long
     def get_blacklisted_fields(self):
-        if self.api_type == BULK_API_TYPE:
+        if self.api_type == BULK_API_TYPE or self.api_type == BULK2_API_TYPE:
             return {('EntityDefinition', 'RecordTypesSupported'): "this field is unsupported by the Bulk API."}
         elif self.api_type == REST_API_TYPE:
             return {}
