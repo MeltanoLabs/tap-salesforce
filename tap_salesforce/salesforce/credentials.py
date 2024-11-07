@@ -1,9 +1,11 @@
 import threading
 import logging
 import requests
+import backoff
 from collections import namedtuple
 from simple_salesforce import SalesforceLogin
 
+from tap_salesforce.salesforce.exceptions import RetriableSalesforceAuthenticationError
 
 LOGGER = logging.getLogger(__name__)
 
@@ -71,6 +73,11 @@ class SalesforceAuthOAuth(SalesforceAuth):
     # The minimum expiration setting for SF Refresh Tokens is 15 minutes
     REFRESH_TOKEN_EXPIRATION_PERIOD = 900
 
+    # Errors that can be retried
+    RETRIABLE_SALESFORCE_RESPONSES = [
+        {'error': 'invalid_grant', 'error_description': 'expired authorization code'}
+    ]
+
     @property
     def _login_body(self):
         return {'grant_type': 'refresh_token', **self._credentials._asdict()}
@@ -84,7 +91,15 @@ class SalesforceAuthOAuth(SalesforceAuth):
 
         return login_url
 
+    @backoff.on_exception(
+        backoff.expo,
+        RetriableSalesforceAuthenticationError,
+        max_tries=5,
+        factor=4,
+        jitter=None
+    )
     def login(self):
+        resp = None  # Ensure resp is defined outside the try block
         try:
             LOGGER.info("Attempting login via OAuth2")
 
@@ -92,21 +107,29 @@ class SalesforceAuthOAuth(SalesforceAuth):
                                  data=self._login_body,
                                  headers={"Content-Type": "application/x-www-form-urlencoded"})
 
-            resp.raise_for_status()
+            resp.raise_for_status()  # This will raise an exception for HTTP errors
             auth = resp.json()
 
             LOGGER.info("OAuth2 login successful")
             self._access_token = auth['access_token']
             self._instance_url = auth['instance_url']
-        except Exception as e:
-            error_message = str(e)
-            if resp:
-                error_message = error_message + ", Response from Salesforce: {}".format(resp.text)
-            raise Exception(error_message) from e
-        finally:
+
             LOGGER.info("Starting new login timer")
             self.login_timer = threading.Timer(self.REFRESH_TOKEN_EXPIRATION_PERIOD, self.login)
             self.login_timer.start()
+        except requests.exceptions.HTTPError as e:
+            error_message = f"{e}, Response from Salesforce: {resp.text}"
+            failed_auth_response = resp.json()
+            if failed_auth_response in self.RETRIABLE_SALESFORCE_RESPONSES:
+                raise RetriableSalesforceAuthenticationError(error_message) from e
+            else:
+                raise Exception(error_message) from e
+        except Exception as e:
+            error_message = str(e)
+            if resp is not None:
+                # Ensure we capture the response body even when an error occurs
+                error_message += ", Response from Salesforce: {}".format(resp.text)
+            raise Exception(error_message) from e
 
 
 class SalesforceAuthPassword(SalesforceAuth):
