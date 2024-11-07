@@ -211,6 +211,9 @@ def do_discover(sf: Salesforce, streams: list[str]):
 
             properties[field_name] = property_schema
 
+            if ((field_name=='OldValue') or (field_name=='NewValue')) and ('History' in sobject_name):
+                properties[field_name] = {'type': ['null', 'string']}
+
         if replication_key:
             mdata = metadata.write(
                 mdata, ('properties', replication_key), 'inclusion', 'automatic')
