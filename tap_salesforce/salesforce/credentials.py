@@ -1,24 +1,16 @@
-import threading
 import logging
-import requests
+import threading
 from collections import namedtuple
-from simple_salesforce import SalesforceLogin
 
+import requests
+from simple_salesforce import SalesforceLogin
 
 LOGGER = logging.getLogger(__name__)
 
 
-OAuthCredentials = namedtuple('OAuthCredentials', (
-    "client_id",
-    "client_secret",
-    "refresh_token"
-))
+OAuthCredentials = namedtuple("OAuthCredentials", ("client_id", "client_secret", "refresh_token"))
 
-PasswordCredentials = namedtuple('PasswordCredentials', (
-    "username",
-    "password",
-    "security_token"
-))
+PasswordCredentials = namedtuple("PasswordCredentials", ("username", "password", "security_token"))
 
 
 def parse_credentials(config):
@@ -30,7 +22,7 @@ def parse_credentials(config):
     raise Exception("Cannot create credentials from config.")
 
 
-class SalesforceAuth():
+class SalesforceAuth:
     def __init__(self, credentials, is_sandbox=False):
         self.is_sandbox = is_sandbox
         self._credentials = credentials
@@ -41,16 +33,17 @@ class SalesforceAuth():
 
     def login(self):
         """Attempt to login and set the `instance_url` and `access_token` on success."""
-        pass
 
     @property
     def rest_headers(self):
-        return {"Authorization": "Bearer {}".format(self._access_token)}
+        return {"Authorization": f"Bearer {self._access_token}"}
 
     @property
     def bulk_headers(self):
-        return {"X-SFDC-Session": self._access_token,
-                "Content-Type": "application/json"}
+        return {
+            "X-SFDC-Session": self._access_token,
+            "Content-Type": "application/json",
+        }
 
     @property
     def instance_url(self):
@@ -73,14 +66,14 @@ class SalesforceAuthOAuth(SalesforceAuth):
 
     @property
     def _login_body(self):
-        return {'grant_type': 'refresh_token', **self._credentials._asdict()}
+        return {"grant_type": "refresh_token", **self._credentials._asdict()}
 
     @property
     def _login_url(self):
-        login_url = 'https://login.salesforce.com/services/oauth2/token'
+        login_url = "https://login.salesforce.com/services/oauth2/token"
 
         if self.is_sandbox:
-            login_url = 'https://test.salesforce.com/services/oauth2/token'
+            login_url = "https://test.salesforce.com/services/oauth2/token"
 
         return login_url
 
@@ -88,20 +81,22 @@ class SalesforceAuthOAuth(SalesforceAuth):
         try:
             LOGGER.info("Attempting login via OAuth2")
 
-            resp = requests.post(self._login_url,
-                                 data=self._login_body,
-                                 headers={"Content-Type": "application/x-www-form-urlencoded"})
+            resp = requests.post(
+                self._login_url,
+                data=self._login_body,
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
 
             resp.raise_for_status()
             auth = resp.json()
 
             LOGGER.info("OAuth2 login successful")
-            self._access_token = auth['access_token']
-            self._instance_url = auth['instance_url']
+            self._access_token = auth["access_token"]
+            self._instance_url = auth["instance_url"]
         except Exception as e:
             error_message = str(e)
             if resp:
-                error_message = error_message + ", Response from Salesforce: {}".format(resp.text)
+                error_message = error_message + f", Response from Salesforce: {resp.text}"
             raise Exception(error_message) from e
         finally:
             LOGGER.info("Starting new login timer")
@@ -111,10 +106,7 @@ class SalesforceAuthOAuth(SalesforceAuth):
 
 class SalesforceAuthPassword(SalesforceAuth):
     def login(self):
-        login = SalesforceLogin(
-            sandbox=self.is_sandbox,
-            **self._credentials._asdict()
-        )
+        login = SalesforceLogin(sandbox=self.is_sandbox, **self._credentials._asdict())
 
         self._access_token, host = login
         self._instance_url = "https://" + host
