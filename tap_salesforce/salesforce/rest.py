@@ -2,14 +2,15 @@
 import singer
 import singer.utils as singer_utils
 from requests.exceptions import HTTPError
-from tap_salesforce.salesforce.exceptions import TapSalesforceException
+
+from tap_salesforce.salesforce.exceptions import TapSalesforceExceptionError
 
 LOGGER = singer.get_logger()
 
 MAX_RETRIES = 4
 
-class Rest():
 
+class Rest:
     def __init__(self, sf):
         self.sf = sf
 
@@ -20,15 +21,9 @@ class Rest():
         return self._query_recur(query, catalog_entry, start_date)
 
     # pylint: disable=too-many-arguments
-    def _query_recur(
-            self,
-            query,
-            catalog_entry,
-            start_date_str,
-            end_date=None,
-            retries=MAX_RETRIES):
+    def _query_recur(self, query, catalog_entry, start_date_str, end_date=None, retries=MAX_RETRIES):
         params = {"q": query}
-        url = "{}/services/data/v60.0/queryAll".format(self.sf.instance_url)
+        url = f"{self.sf.instance_url}/services/data/v60.0/queryAll"
         headers = self.sf.auth.rest_headers
 
         sync_start = singer_utils.now()
@@ -36,25 +31,20 @@ class Rest():
             end_date = sync_start
 
         if retries == 0:
-            raise TapSalesforceException(
-                "Ran out of retries attempting to query Salesforce Object {}".format(
-                    catalog_entry['stream']))
+            raise TapSalesforceExceptionError(
+                "Ran out of retries attempting to query Salesforce Object {}".format(catalog_entry["stream"])
+            )
 
         retryable = False
         try:
-            for rec in self._sync_records(url, headers, params):
-                yield rec
+            yield from self._sync_records(url, headers, params)
 
             # If the date range was chunked (an end_date was passed), sync
             # from the end_date -> now
             if end_date < sync_start:
                 next_start_date_str = singer_utils.strftime(end_date)
                 query = self.sf._build_query_string(catalog_entry, next_start_date_str)
-                for record in self._query_recur(
-                        query,
-                        catalog_entry,
-                        next_start_date_str,
-                        retries=retries):
+                for record in self._query_recur(query, catalog_entry, next_start_date_str, retries=retries):
                     yield record
 
         except HTTPError as ex:
@@ -65,7 +55,8 @@ class Rest():
                 LOGGER.info(
                     "Salesforce returned QUERY_TIMEOUT querying %d days of %s",
                     day_range,
-                    catalog_entry['stream'])
+                    catalog_entry["stream"],
+                )
                 retryable = True
             else:
                 raise ex
@@ -76,30 +67,28 @@ class Rest():
             end_date = end_date - half_day_range
 
             if half_day_range.days == 0:
-                raise TapSalesforceException(
-                    "Attempting to query by 0 day range, this would cause infinite looping.")
+                raise TapSalesforceExceptionError(
+                    "Attempting to query by 0 day range, this would cause infinite looping."
+                )
 
-            query = self.sf._build_query_string(catalog_entry, singer_utils.strftime(start_date),
-                                                singer_utils.strftime(end_date))
-            for record in self._query_recur(
-                    query,
-                    catalog_entry,
-                    start_date_str,
-                    end_date,
-                    retries - 1):
+            query = self.sf._build_query_string(
+                catalog_entry,
+                singer_utils.strftime(start_date),
+                singer_utils.strftime(end_date),
+            )
+            for record in self._query_recur(query, catalog_entry, start_date_str, end_date, retries - 1):
                 yield record
 
     def _sync_records(self, url, headers, params):
         while True:
-            resp = self.sf._make_request('GET', url, headers=headers, params=params)
+            resp = self.sf._make_request("GET", url, headers=headers, params=params)
             resp_json = resp.json()
 
-            for rec in resp_json.get('records'):
-                yield rec
+            yield from resp_json.get("records")
 
-            next_records_url = resp_json.get('nextRecordsUrl')
+            next_records_url = resp_json.get("nextRecordsUrl")
 
             if next_records_url is None:
                 break
             else:
-                url = "{}{}".format(self.sf.instance_url, next_records_url)
+                url = f"{self.sf.instance_url}{next_records_url}"
