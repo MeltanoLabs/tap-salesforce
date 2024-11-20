@@ -315,6 +315,8 @@ class Salesforce():
         else:
             raise TapSalesforceException("Unsupported HTTP method")
 
+        if not resp.ok:
+            LOGGER.error("Got error response from Salesforce: %", resp.text)
         raise_for_status(resp)
 
         if resp.headers.get('Sforce-Limit-Info') is not None:
