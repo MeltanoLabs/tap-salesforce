@@ -3,7 +3,7 @@
 from setuptools import setup
 
 setup(name='tap-salesforce',
-      version='1.5.1',
+      version='1.7.0',
       description='Singer.io tap for extracting data from the Salesforce API',
       author='Stitch',
       url='https://singer.io',
@@ -15,7 +15,7 @@ setup(name='tap-salesforce',
           'xmltodict==0.11.0',
           'simple-salesforce<1.0', # v1.0 requires `requests==2.22.0`
           # fix version conflicts, see https://gitlab.com/meltano/meltano/issues/193
-          'idna==2.7',
+          'idna==3.7',
           'cryptography',
           'pyOpenSSL',
       ],
