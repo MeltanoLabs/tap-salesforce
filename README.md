@@ -59,7 +59,8 @@ pip install git+https://github.com/MeltanoLabs/tap-salesforce.git
   "start_date": "2017-11-02T00:00:00Z",
   "state_message_threshold": 1000,
   "max_workers": 8,
-  "streams_to_discover": ["Lead", "LeadHistory"]
+  "streams_to_discover": ["Lead", "LeadHistory"],
+  "lookback_window": 10
 }
 ```
 
@@ -76,6 +77,8 @@ The `max_workers` value is used to set the maximum number of threads used in ord
 The `streams_to_discover` value may contain a list of Salesforce streams (each ending up in a target table) for which the discovery is handled.
 By default, discovery is handled for all existing streams, which can take several minutes. With just several entities which users typically need it is running few seconds.
 The disadvantage is that you have to keep this list in sync with the `select` section, where you specify all properties(each ending up in a table column).
+
+The `lookback_window` (in seconds) subtracts the desired amount of seconds from the bookmark to sync past data. Recommended value: 10 seconds.
 
 ## Run Discovery
 
