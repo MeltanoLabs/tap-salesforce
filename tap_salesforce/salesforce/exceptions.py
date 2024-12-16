@@ -1,10 +1,11 @@
 # pylint: disable=super-init-not-called
 
-class TapSalesforceException(Exception):
+
+class TapSalesforceExceptionError(Exception):
     pass
 
 
-class TapSalesforceQuotaExceededException(TapSalesforceException):
+class TapSalesforceQuotaExceededError(TapSalesforceExceptionError):
     pass
 
 
@@ -17,6 +18,6 @@ class SFDCCustomNotAcceptableError(Exception):
     on any salesforce documentation page or forum.
     Example Error Message:
     ```
-    requests.exceptions.HTTPError: 406 Client Error: CustomNotAcceptable for 
+    requests.exceptions.HTTPError: 406 Client Error: CustomNotAcceptable for
     url: https://XXX.salesforce.com/services/data/v53.0/sobjects/XXX/describe
     """

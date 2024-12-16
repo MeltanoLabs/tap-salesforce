@@ -1,0 +1,23 @@
+line-length = 120
+target-version = "py37"
+
+[lint]
+select = [
+    "F",    # pyflakes
+    "E",    # pycodestyle (errors)
+    "W",    # pycodestyle (warnings)
+    "C90",  # mccabe
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "DTZ",  # flake8-datetimez
+    "T10",  # flake8-debugger
+    "PIE",  # flake8-pie
+    "YTT",  # flake8-2020
+    "T20",  # flake8-print
+    "SIM",  # flake8-simplify
+    "PERF", # Perflint
+    "RUF",  # Ruff-specific rules
+]
