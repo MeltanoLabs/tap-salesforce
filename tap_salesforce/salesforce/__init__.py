@@ -78,7 +78,6 @@ UNSUPPORTED_BULK_API_SALESFORCE_OBJECTS = {
 # The following objects have certain WHERE clause restrictions so we exclude them.
 QUERY_RESTRICTED_SALESFORCE_OBJECTS = {
     "Announcement",
-    "ContentDocumentLink",
     "CollaborationGroupRecord",
     "Vote",
     "IdeaComment",
