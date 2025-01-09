@@ -347,7 +347,7 @@ class Salesforce:
             endpoint_tag = "CompositeBatch"
             url = self.data_url.format(instance_url, endpoint)
             method = "POST"
-            headers['Content-Type'] = 'application/json'
+            headers["Content-Type"] = "application/json"
             composite_subrequests = []
             for obj in sobject:
                 sub_endpoint = f"sobjects/{obj}/describe"
@@ -365,7 +365,7 @@ class Salesforce:
             resp = self._make_request(method, url, headers=headers, body=body)
 
         if isinstance(sobject, list):
-            return resp.json()['results']
+            return resp.json()["results"]
         else:
             return resp.json()
 
