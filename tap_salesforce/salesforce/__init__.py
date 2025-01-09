@@ -1,3 +1,4 @@
+import json
 import re
 from datetime import timedelta
 
@@ -332,10 +333,28 @@ class Salesforce:
         """Describes all objects or a specific object"""
         headers = self.auth.rest_headers
         instance_url = self.auth.instance_url
+        body = None
+        method = "GET"
         if sobject is None:
             endpoint = "sobjects"
             endpoint_tag = "sobjects"
             url = self.data_url.format(instance_url, endpoint)
+        elif isinstance(sobject, list):
+            batch_length = len(sobject)
+            if batch_length > 25:
+                raise TapSalesforceException(f"Composite describe limited to 25 sObjects per batch. Given list of {batch_length}.")
+            endpoint = "composite/batch"
+            endpoint_tag = "CompositeBatch"
+            url = self.data_url.format(instance_url, endpoint)
+            method = "POST"
+            headers['Content-Type'] = 'application/json'
+            composite_subrequests = []
+            for obj in sobject:
+                sub_endpoint = f"sobjects/{obj}/describe"
+                sub_url = self.data_url.format("", sub_endpoint)
+                subrequest = {"method": "GET", "url": sub_url}
+                composite_subrequests.append(subrequest)
+            body = json.dumps({"batchRequests": composite_subrequests})
         else:
             endpoint = f"sobjects/{sobject}/describe"
             endpoint_tag = sobject
@@ -343,9 +362,12 @@ class Salesforce:
 
         with metrics.http_request_timer("describe") as timer:
             timer.tags["endpoint"] = endpoint_tag
-            resp = self._make_request("GET", url, headers=headers)
+            resp = self._make_request(method, url, headers=headers, body=body)
 
-        return resp.json()
+        if isinstance(sobject, list):
+            return resp.json()['results']
+        else:
+            return resp.json()
 
     # pylint: disable=no-self-use
     def _get_selected_properties(self, catalog_entry):
