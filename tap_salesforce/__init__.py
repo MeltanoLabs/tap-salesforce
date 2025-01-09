@@ -239,7 +239,8 @@ def do_discover(sf: Salesforce, streams: list[str]):  # noqa: C901
 
             if missing_unsupported_field_names:
                 LOGGER.info(
-                    "Ignoring the following unsupported fields for object %s as they are missing from the field list: %s",
+                    "Ignoring the following unsupported fields for object %s as they are missing"
+                    + "from the field list: %s",
                     sobject_name,
                     ", ".join(sorted(missing_unsupported_field_names)),
                 )

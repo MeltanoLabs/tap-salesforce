@@ -342,7 +342,7 @@ class Salesforce:
         elif isinstance(sobject, list):
             batch_length = len(sobject)
             if batch_length > 25:
-                raise TapSalesforceException(f"Composite describe limited to 25 sObjects per batch. Given list of {batch_length}.")
+                raise TapSalesforceExceptionError(f"Composite limited to 25 sObjects per batch. ({batch_length}).")
             endpoint = "composite/batch"
             endpoint_tag = "CompositeBatch"
             url = self.data_url.format(instance_url, endpoint)
