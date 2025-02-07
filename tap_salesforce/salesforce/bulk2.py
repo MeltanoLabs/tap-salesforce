@@ -2,6 +2,7 @@ import csv
 import json
 import sys
 import time
+import io
 
 import singer
 from singer import metrics
@@ -24,7 +25,7 @@ class Bulk2:
         self._wait_for_job(job_id)
 
         for batch in self._get_next_batch(job_id):
-            yield from csv.DictReader(batch.decode("utf-8").replace('\0', '').splitlines())
+            yield from csv.DictReader(io.StringIO(batch.decode("utf-8").replace('\0', '')))
 
     def _get_bulk_headers(self):
         return {**self.sf.auth.rest_headers, "Content-Type": "application/json"}
