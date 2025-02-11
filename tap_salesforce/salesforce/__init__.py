@@ -149,7 +149,7 @@ def raise_for_status(resp):
         that this error is ephemeral and resolved after retries.
     """
     if resp.status_code != 200:
-        err_msg = f"{resp.status_code} Client Error: {resp.reason} " f"for url: {resp.url}"
+        err_msg = f"{resp.status_code} Client Error: {resp.reason} for url: {resp.url}"
         LOGGER.warning(err_msg)
 
     if resp.status_code == 406 and "CustomNotAcceptable" in resp.reason:
