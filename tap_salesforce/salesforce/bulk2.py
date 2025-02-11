@@ -36,7 +36,7 @@ class Bulk2:
         query = self.sf._build_query_string(catalog_entry, start_date, order_by_clause=False)
 
         body = {
-            "operation": "query",
+            "operation": "queryAll",
             "query": query,
         }
 
