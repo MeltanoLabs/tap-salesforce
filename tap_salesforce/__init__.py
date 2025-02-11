@@ -365,7 +365,7 @@ def is_property_selected(  # noqa: C901
     if inclusion == "unsupported":
         if selected is True:
             LOGGER.debug(
-                "Property '%s' was selected but is not supported. " "Ignoring selected==True input.",
+                "Property '%s' was selected but is not supported. Ignoring selected==True input.",
                 ":".join(breadcrumb),
             )
         return False
@@ -373,8 +373,7 @@ def is_property_selected(  # noqa: C901
     if inclusion == "automatic":
         if selected is False:
             LOGGER.debug(
-                "Property '%s' was deselected while also set "
-                "for automatic inclusion. Ignoring selected==False input.",
+                "Property '%s' was deselected while also set for automatic inclusion. Ignoring selected==False input.",
                 ":".join(breadcrumb),
             )
         return True
@@ -386,7 +385,7 @@ def is_property_selected(  # noqa: C901
         return selected_by_default
 
     LOGGER.debug(
-        "Selection metadata omitted for '%s':'%s'. " "Using parent value of selected=%s.",
+        "Selection metadata omitted for '%s':'%s'. Using parent value of selected=%s.",
         stream_name,
         breadcrumb,
         parent_value,
