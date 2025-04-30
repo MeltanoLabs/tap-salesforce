@@ -519,13 +519,14 @@ def main_impl():
             default_start_date=CONFIG.get("start_date"),
             api_type=CONFIG.get("api_type"),
         )
-        sf.login()
 
         if args.discover:
+            sf.login()
             do_discover(sf, CONFIG.get("streams_to_discover", []))
         elif args.properties or args.catalog:
             catalog = args.properties or args.catalog.to_dict()
             state = build_state(args.state, catalog)
+            sf.login()
             do_sync(sf, catalog, state)
     finally:
         if sf:

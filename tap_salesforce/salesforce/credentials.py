@@ -81,12 +81,13 @@ class SalesforceAuthOAuth(SalesforceAuth):
 
     @backoff.on_exception(
         backoff.expo,
-        requests.exceptions.HTTPError,
+        requests.exceptions.RequestException,
         max_tries=10,
         factor=2,
         on_backoff=log_backoff_attempt,
     )
     def login(self):
+        resp = None
         try:
             LOGGER.info("Attempting login via OAuth2")
 
