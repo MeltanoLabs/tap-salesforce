@@ -62,7 +62,7 @@ class Bulk2:
                 break
 
             if status == "Failed":
-                raise Exception(f"Job failed: {resp.json()}")
+                raise Exception(f"Job failed: {resp}")
 
             time.sleep(BATCH_STATUS_POLLING_SLEEP)
 
