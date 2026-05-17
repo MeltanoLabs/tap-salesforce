@@ -10,6 +10,7 @@ This is a forked version of [tap-salesforce (v1.4.24)](https://github.com/singer
 Main differences from the original version:
 
 - Support for `username/password/security_token` authentication
+- Support for OAuth 2.0 JWT Bearer authentication (keypair-based, durable, recommended for unattended use)
 - Support for concurrent execution (8 threads by default) when accessing different API endpoints to speed up the extraction process
 - Support for much faster discovery
 
@@ -52,6 +53,23 @@ pip install git+https://github.com/MeltanoLabs/tap-salesforce.git
   "security_token": "Security Token",
 }
 ```
+
+**Required for OAuth 2.0 JWT Bearer based authentication**
+```
+{
+  "jwt_client_id": "Consumer Key of your Connected/External Client App",
+  "jwt_username": "Salesforce username to impersonate",
+  "jwt_private_key": "-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----\n"
+}
+```
+
+`jwt_client_id` is the Consumer Key of a Connected App (or External Client App) configured for JWT bearer flow. `jwt_username` is the Salesforce user whose identity the tap will assume (the JWT `sub` claim) — that user must be pre-authorized for the app. `jwt_private_key` is the RSA private key (PEM) corresponding to the X.509 cert uploaded to the app. The user must have completed an OAuth grant for the app at least once (e.g. via the authorize endpoint) before JWT bearer logins will succeed. See [Salesforce's JWT bearer flow docs](https://help.salesforce.com/s/articleView?id=xcloud.remoteaccess_oauth_jwt_flow.htm) for the full setup.
+
+When multiple credential types are present in the config, the tap chooses in this order: JWT → OAuth refresh-token → username/password.
+
+> **JWT bearer is incompatible with `api_type: BULK`.** Bulk API 1.0 (`/services/async/...`) authenticates via an `X-SFDC-Session` header that requires a SOAP-style session id. The OAuth2 JWT Bearer flow never issues one, so JWT logins succeed but every stream then fails with `InvalidSessionId` at job-create time. Use **`api_type: BULK2`** (Bulk 2.0 uses `Authorization: Bearer`) or `REST` when authenticating with JWT. The tap will refuse to start if it detects this combination.
+
+> **Meltano users:** the [meltano/hub plugin definition](https://github.com/meltano/hub/blob/main/_data/meltano/extractors/tap-salesforce/meltanolabs.yml) added `BULK2` to the `api_type` options some time after this tap began supporting it. If you locked the plugin before that hub update, your local `plugins/extractors/tap-salesforce--meltanolabs.lock` may still list only `REST` and `BULK`, and Meltano will reject `BULK2` at config-validation time with `'BULK2' is not a valid choice for 'api_type'`. Refresh the lockfile with `meltano lock --update --plugin-type extractor tap-salesforce`.
 
 **Optional**
 ```

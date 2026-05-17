@@ -14,6 +14,7 @@ from singer import metadata, metrics
 import tap_salesforce.salesforce
 from tap_salesforce.salesforce import Salesforce
 from tap_salesforce.salesforce.credentials import (
+    JWTCredentials,
     OAuthCredentials,
     PasswordCredentials,
     parse_credentials,
@@ -46,6 +47,12 @@ OAUTH_CONFIG_KEYS = OAuthCredentials._fields
 # - password
 # - security_token
 PASSWORD_CONFIG_KEYS = PasswordCredentials._fields
+
+# JWT Bearer:
+# - jwt_client_id (Connected/External Client App consumer key)
+# - jwt_username  (Salesforce username to impersonate)
+# - jwt_private_key (RSA private key PEM, matching the cert uploaded to the app)
+JWT_CONFIG_KEYS = JWTCredentials._fields
 
 CONFIG = {
     "refresh_token": None,
