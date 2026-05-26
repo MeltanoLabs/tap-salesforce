@@ -70,6 +70,12 @@ class SalesforceAuthOAuth(SalesforceAuth):
 
     @property
     def _login_url(self):
+        # Simulator override env var for login URL
+        import os
+        override = os.environ.get("SIMULATOR_TAP_SALESFORCE_LOGIN_URL")
+        if override:
+            return override
+
         login_url = "https://login.salesforce.com/services/oauth2/token"
 
         if self.is_sandbox:

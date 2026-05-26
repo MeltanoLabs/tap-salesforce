@@ -93,4 +93,14 @@ To sync data, select fields in the `properties.json` output and run the tap.
 tap-salesforce --config config.json --properties properties.json [--state state.json]
 ```
 
+## Environment Variables
+
+### `SIMULATOR_TAP_SALESFORCE_LOGIN_URL` (dev only)
+
+Optional override for the Salesforce OAuth token endpoint. When set, the tap POSTs the OAuth refresh request to this URL instead of `https://login.salesforce.com/services/oauth2/token` (or `https://test.salesforce.com/...` when `is_sandbox=true`). Read directly from the process environment in `tap_salesforce/salesforce/credentials.py`; not a `config.json` setting.
+
+This variable is injected externally — it is not normally set by the tap or its callers. In MK's data ingestion pipeline it is supplied by `mk-airflow` (`dags/data_ingestion_core.py:_apply_simulator_overrides`), which reads the `mdi_simulator_overrides` MWAA Airflow Variable and writes the resulting env vars into the pull task's ECS `containerOverrides`. That injection is gated behind `env == "dev"`, so the variable is never set on production pull tasks. When unset (the default everywhere outside the dev MWAA), the tap behaves identically to upstream.
+
+Intended use is to redirect a tenant's pull task at a local Salesforce simulator (`rgip-connector-simulators`) for integration testing without touching production credentials.
+
 Copyright &copy; 2017 Stitch
