@@ -10,6 +10,7 @@ import xmltodict
 from requests.exceptions import RequestException
 from singer import metrics
 
+from tap_salesforce import output as tap_output
 from tap_salesforce.salesforce.exceptions import (
     TapSalesforceExceptionError,
     TapSalesforceQuotaExceededError,
@@ -133,7 +134,7 @@ class Bulk:
                         "Batches to go: %d",
                         len(state["bookmarks"][catalog_entry["tap_stream_id"]]["BatchIDs"]),
                     )
-                    singer.write_state(state)
+                    tap_output.write_state(state)
             else:
                 raise TapSalesforceExceptionError(batch_status["stateMessage"])
         else:

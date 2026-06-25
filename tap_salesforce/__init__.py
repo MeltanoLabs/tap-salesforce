@@ -22,6 +22,17 @@ from tap_salesforce.salesforce.exceptions import (
     TapSalesforceExceptionError,
     TapSalesforceQuotaExceededError,
 )
+from tap_salesforce import output as tap_output
+from tap_salesforce.observability import (
+    dogstatsd_count,
+    emit_discovery_summary_metric,
+    get_tenant_id,
+    log_quota_consumed,
+    log_quota_status,
+    log_sync_complete,
+    log_sync_start,
+    set_phase,
+)
 from tap_salesforce.sync import (
     get_stream_version,
     resume_syncing_bulk_query,
@@ -126,15 +137,36 @@ def create_property_schema(field, mdata):
     return (property_schema, mdata)
 
 
-def do_discover(sf: Salesforce, streams: list[str]):  # noqa: C901
+def do_discover(sf: Salesforce, streams: list[str]):
+    """Wrapper around `_do_discover_impl` that surfaces exceptions via dogstatsd.
+
+    Meltano captures the discover subprocess's stderr, so a raised exception is
+    invisible in DD Logs. Emit a tagged counter so failure mode shows up on the
+    dashboard even when the traceback is swallowed by Meltano.
+    """
+    set_phase("discover")
+    try:
+        _do_discover_impl(sf, streams)
+    except Exception as e:
+        dogstatsd_count(
+            "mdi.salesforce.api.discovery_errors",
+            1,
+            {"tenant_id": get_tenant_id(), "error_type": type(e).__name__},
+        )
+        raise
+
+
+def _do_discover_impl(sf: Salesforce, streams: list[str]):  # noqa: C901
     if not streams:
         """Describes a Salesforce instance's objects and generates a JSON schema for each field."""
         LOGGER.info("Start discovery for all streams")
         global_description = sf.describe()
         objects_to_discover = {o["name"] for o in global_description["sobjects"]}
+        describe_calls_issued = 1
     else:
         LOGGER.info(f"Start discovery: {streams=}")
         objects_to_discover = streams
+        describe_calls_issued = 0
 
     key_properties = ["Id"]
 
@@ -162,6 +194,7 @@ def do_discover(sf: Salesforce, streams: list[str]):  # noqa: C901
     entries = []
     for batch in sobject_batches:
         sobject_descriptions = sf.describe(batch)
+        describe_calls_issued += 1
 
         for subrequest_result in sobject_descriptions:
             sobject_description = subrequest_result["result"]
@@ -312,6 +345,32 @@ def do_discover(sf: Salesforce, streams: list[str]):  # noqa: C901
         entries = [e for e in entries if e["stream"] not in unsupported_tag_objects]
 
     result = {"streams": entries}
+
+    # CPF-1874: emit dogstatsd metrics directly to the DD agent over UDP. This
+    # path bypasses Meltano's discover-subprocess stderr capture, so the metrics
+    # reach DD even though the structured log below is silently swallowed when
+    # do_discover runs as a Meltano child process (the original blind spot — the
+    # `LOGGER.info` discover events were never visible in DD because Meltano
+    # consumes the discover subprocess's stderr instead of forwarding it).
+    emit_discovery_summary_metric(
+        describe_calls_issued=describe_calls_issued,
+        streams_discovered=len(entries),
+    )
+
+    # Structured log retained for richer fields (tenant_id, streams_requested);
+    # surfaces in DD Logs when stderr IS forwarded (e.g. invocations outside
+    # Meltano's run-mode pipeline).
+    LOGGER.info(
+        "salesforce_discovery_complete: %s",
+        json.dumps({
+            "event_type": "salesforce_discovery_complete",
+            "tenant_id": CONFIG.get("tenant_id"),
+            "streams_requested": len(streams) if streams else 0,
+            "streams_discovered": len(entries),
+            "describe_calls_issued": describe_calls_issued,
+        }),
+    )
+
     json.dump(result, sys.stdout, indent=4)
 
 
@@ -430,14 +489,14 @@ async def sync_catalog_entry(sf, catalog_entry, state):
 
     LOGGER.info("%s: Starting", stream_name)
 
-    singer.write_state(state)
+    tap_output.write_state(state)
     key_properties = metadata.to_map(catalog_entry["metadata"]).get((), {}).get("table-key-properties")
 
     # Filter the schema for selected fields
     schema = deepcopy(catalog_entry["schema"])
     pop_deselected_schema(schema, stream_name, (), mdata)
 
-    singer.write_schema(stream, schema, key_properties, replication_key, stream_alias)
+    tap_output.write_schema(stream, schema, key_properties, replication_key=replication_key, stream_alias=stream_alias)
     loop = asyncio.get_event_loop()
 
     job_id = singer.get_bookmark(state, catalog_entry["tap_stream_id"], "JobID")
@@ -463,8 +522,12 @@ async def sync_catalog_entry(sf, catalog_entry, state):
             bookmark = (
                 state.get("bookmarks", {}).get(catalog_entry["tap_stream_id"], {}).pop("JobHighestBookmarkSeen", None)
             )
+            bookmark = tap_output.safe_bookmark_value(
+                stream_name, replication_key, bookmark,
+                max_future_seconds=CONFIG.get("max_future_bookmark_seconds", 3600)
+            )
             state = singer.write_bookmark(state, catalog_entry["tap_stream_id"], replication_key, bookmark)
-            singer.write_state(state)
+            tap_output.write_state(state)
     else:
         state_msg_threshold = CONFIG.get("state_message_threshold", 1000)
 
@@ -473,13 +536,14 @@ async def sync_catalog_entry(sf, catalog_entry, state):
         bookmark_is_empty = state.get("bookmarks", {}).get(catalog_entry["tap_stream_id"]) is None
 
         if replication_key or bookmark_is_empty:
-            singer.write_message(activate_version_message)
+            tap_output.write_message(activate_version_message)
             state = singer.write_bookmark(state, catalog_entry["tap_stream_id"], "version", stream_version)
         await loop.run_in_executor(None, sync_stream, sf, catalog_entry, state, state_msg_threshold)
         LOGGER.info("Completed sync for %s", stream_name)
 
 
 def do_sync(sf, catalog, state):
+    set_phase("sync")
     LOGGER.info("Starting sync")
 
     max_workers = CONFIG.get("max_workers", 8)
@@ -499,7 +563,7 @@ def do_sync(sf, catalog, state):
         loop.run_until_complete(loop.shutdown_asyncgens())
         loop.close()
 
-    singer.write_state(state)
+    tap_output.write_state(state)
     LOGGER.info("Finished sync")
 
 
@@ -509,6 +573,7 @@ def main_impl():
 
     credentials = parse_credentials(CONFIG)
     sf = None
+    sync_error = None
     try:
         sf = Salesforce(
             credentials=credentials,
@@ -518,6 +583,8 @@ def main_impl():
             select_fields_by_default=CONFIG.get("select_fields_by_default"),
             default_start_date=CONFIG.get("start_date"),
             api_type=CONFIG.get("api_type"),
+            limit_windowed_objects_month=CONFIG.get("limit_windowed_objects_month"),
+            pull_config_objects=CONFIG.get("OBJECTS"),
         )
         sf.login()
 
@@ -526,9 +593,37 @@ def main_impl():
         elif args.properties or args.catalog:
             catalog = args.properties or args.catalog.to_dict()
             state = build_state(args.state, catalog)
+            
+            # Log sync start for observability
+            log_sync_start(sf, catalog, CONFIG)
+            
             do_sync(sf, catalog, state)
+    except Exception as e:
+        sync_error = e
+        raise
     finally:
         if sf:
+            # Log sync completion for observability (success or failure)
+            log_sync_complete(
+                sf,
+                CONFIG,
+                success=(sync_error is None),
+                error=sync_error,
+            )
+
+            # Log post-extraction quota status and delta
+            if sf._latest_quota_used is not None:
+                log_quota_status(
+                    sf, sf._latest_quota_used, sf._latest_quota_allotted, phase="post_extract"
+                )
+                if sf._initial_quota_used is not None:
+                    log_quota_consumed(
+                        sf,
+                        sf._initial_quota_used,
+                        sf._latest_quota_used,
+                        sf._latest_quota_allotted,
+                    )
+
             if sf.rest_requests_attempted > 0:
                 LOGGER.debug(
                     "This job used %s REST requests towards the Salesforce quota.",
