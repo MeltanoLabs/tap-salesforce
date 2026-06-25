@@ -1,4 +1,5 @@
 import json
+import os
 import re
 from datetime import timedelta
 
@@ -353,6 +354,33 @@ class Salesforce:
     def instance_url(self):
         return self.auth.instance_url
 
+    def _is_session_expired(self, resp) -> bool:
+        """Return True if the 401 indicates a session expiry.
+
+        Returns True when the response body contains INVALID_SESSION_ID, or
+        when the body cannot be parsed (treated conservatively as expired).
+        """
+        try:
+            body = resp.json()
+            return any(
+                err.get("errorCode") == "INVALID_SESSION_ID"
+                for err in (body if isinstance(body, list) else [])
+            )
+        except Exception:
+            return True  # treat unparseable 401 as expired session
+
+    def _rebuild_headers_with_new_at(self, headers) -> dict:
+        """Return a new headers dict with the current access token injected.
+
+        Callers use either Authorization (REST) or X-SFDC-Session (Bulk).
+        """
+        new_at = self.auth._access_token
+        if "Authorization" in headers:
+            return {**headers, "Authorization": f"Bearer {new_at}"}
+        if "X-SFDC-Session" in headers:
+            return {**headers, "X-SFDC-Session": new_at}
+        return headers
+
     # pylint: disable=too-many-arguments
     @backoff.on_exception(
         backoff.expo,
@@ -366,15 +394,55 @@ class Salesforce:
         # Kept as close to the wire call as possible so the timer measures actual
         # network + SFDC latency, not any bookkeeping.
         request_start = singer_utils.now()
+        LOGGER.info("Making %s request to %s with params: %s", http_method, url, params or body)
         if http_method == "GET":
-            LOGGER.info("Making %s request to %s with params: %s", http_method, url, params)
             resp = self.session.get(url, headers=headers, stream=stream, params=params)
         elif http_method == "POST":
-            LOGGER.info("Making %s request to %s with body %s", http_method, url, body)
             resp = self.session.post(url, headers=headers, data=body)
         else:
             raise TapSalesforceExceptionError("Unsupported HTTP method")
         duration_ms = (singer_utils.now() - request_start).total_seconds() * 1000.0
+
+        # 401 = expired AT. Refresh via bongo and retry once.
+        if resp.status_code == 401:
+            tenant = os.environ.get("TENANT", "unknown")
+            if self._is_session_expired(resp) and hasattr(self.auth, "refresh_access_token"):
+                LOGGER.warning(
+                    "SF data query: 401 INVALID_SESSION_ID — AT expired, refreshing "
+                    "event=sf_401_detected tenant=%s url=%s",
+                    tenant, url,
+                )
+                try:
+                    self.auth.refresh_access_token()
+                    LOGGER.info(
+                        "SF data query: AT refreshed, retrying request "
+                        "event=sf_at_refresh_done tenant=%s url=%s",
+                        tenant, url,
+                    )
+                    headers = self._rebuild_headers_with_new_at(headers)
+                    if http_method == "GET":
+                        resp = self.session.get(url, headers=headers, stream=stream, params=params)
+                    else:
+                        resp = self.session.post(url, headers=headers, data=body)
+                    if resp.status_code == 401:
+                        LOGGER.error(
+                            "SF data query: retry also returned 401 — propagating error "
+                            "event=sf_retry_401 tenant=%s url=%s",
+                            tenant, url,
+                        )
+                except Exception as refresh_err:
+                    LOGGER.error(
+                        "SF data query: AT refresh failed — request will fail "
+                        "event=sf_at_refresh_failed tenant=%s url=%s error=%s",
+                        tenant, url, refresh_err,
+                    )
+                    raise
+            else:
+                LOGGER.warning(
+                    "SF data query: 401 but not INVALID_SESSION_ID — not retrying "
+                    "event=sf_401_not_session tenant=%s url=%s body=%s",
+                    tenant, url, resp.text[:200],
+                )
 
         raise_for_status(resp)
 
