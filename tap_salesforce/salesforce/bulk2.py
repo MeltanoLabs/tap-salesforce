@@ -36,6 +36,10 @@ class Bulk2:
 
         query = self.sf._build_query_string(catalog_entry, start_date, order_by_clause=False)
 
+        # NOTE: Bulk2 has no PK-chunking fallback and always uses `queryAll`, so it
+        # does not get the Task-specific handling that Bulk (v1) has. Routing Task
+        # to BULK2 via api_type_overrides would hit the same OPERATION_TOO_LARGE
+        # (100k-distinct-who/what) this repo works around; use BULK for Task.
         body = {
             "operation": "queryAll",
             "query": query,

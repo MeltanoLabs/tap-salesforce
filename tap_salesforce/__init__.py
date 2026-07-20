@@ -232,8 +232,10 @@ def _do_discover_impl(sf: Salesforce, streams: list[str]):  # noqa: C901
 
                 property_schema, mdata = create_property_schema(f, mdata)
 
-                # Compound Address fields cannot be queried by the Bulk API
-                if f["type"] in ("address", "location") and sf.api_type in [
+                # Compound Address fields cannot be queried by the Bulk API. Use the
+                # per-stream effective api_type so a stream routed to BULK via an
+                # override drops these fields even when the global type is REST.
+                if f["type"] in ("address", "location") and sf.effective_api_type(sobject_name) in [
                     tap_salesforce.salesforce.BULK_API_TYPE,
                     tap_salesforce.salesforce.BULK2_API_TYPE,
                 ]:
@@ -249,10 +251,13 @@ def _do_discover_impl(sf: Salesforce, streams: list[str]):  # noqa: C901
                         )
                     )
 
-                # Blacklisted fields are dependent on the api_type being used
+                # Blacklisted fields depend on the api_type used; resolve the
+                # per-stream effective type so overridden streams are evaluated
+                # against the api_type they will actually be queried with.
+                blacklisted_fields = sf.get_blacklisted_fields(sf.effective_api_type(sobject_name))
                 field_pair = (sobject_name, field_name)
-                if field_pair in sf.get_blacklisted_fields():
-                    unsupported_fields.add((field_name, sf.get_blacklisted_fields()[field_pair]))
+                if field_pair in blacklisted_fields:
+                    unsupported_fields.add((field_name, blacklisted_fields[field_pair]))
 
                 inclusion = metadata.get(mdata, ("properties", field_name), "inclusion")
 
@@ -583,6 +588,7 @@ def main_impl():
             select_fields_by_default=CONFIG.get("select_fields_by_default"),
             default_start_date=CONFIG.get("start_date"),
             api_type=CONFIG.get("api_type"),
+            api_type_overrides=CONFIG.get("api_type_overrides"),
             limit_windowed_objects_month=CONFIG.get("limit_windowed_objects_month"),
             pull_config_objects=CONFIG.get("OBJECTS"),
         )

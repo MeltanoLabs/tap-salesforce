@@ -236,11 +236,16 @@ class Salesforce:
         select_fields_by_default=None,
         default_start_date=None,
         api_type=None,
+        api_type_overrides=None,
         windowed_objects=None,
         limit_windowed_objects_month=None,
         pull_config_objects=None,
     ):
         self.api_type = api_type.upper() if api_type else None
+        # Optional per-stream api_type overrides, e.g. {"Task": "BULK"} to route a
+        # high-volume Activity object through the Bulk API (with PK chunking) while
+        # the remaining streams stay on the global api_type.
+        self.api_type_overrides = self._normalize_api_type_overrides(api_type_overrides)
         self.session = requests.Session()
         if isinstance(quota_percent_per_run, str) and quota_percent_per_run.strip() == "":
             quota_percent_per_run = None
@@ -649,20 +654,50 @@ class Salesforce:
         else:
             return query
 
+    @staticmethod
+    def _normalize_api_type_overrides(api_type_overrides):
+        """Validate and normalize the per-stream api_type override map.
+
+        Keys are lowercased for case-insensitive stream matching (mirrors the Task
+        special-casing in rest.py/bulk.py); values are uppercased and validated
+        against the known api_types so a typo fails loudly at init rather than
+        silently falling back to the global type.
+        """
+        normalized_overrides = {}
+        for stream, value in (api_type_overrides or {}).items():
+            normalized = value.upper() if isinstance(value, str) else value
+            if normalized not in (REST_API_TYPE, BULK_API_TYPE, BULK2_API_TYPE):
+                raise TapSalesforceExceptionError(
+                    f"api_type_overrides[{stream!r}] must be one of "
+                    f"{[REST_API_TYPE, BULK_API_TYPE, BULK2_API_TYPE]}, got {value!r}"
+                )
+            normalized_overrides[stream.lower()] = normalized
+        return normalized_overrides
+
+    def effective_api_type(self, stream):
+        """Resolve the api_type for a stream, honoring per-stream overrides."""
+        return self.api_type_overrides.get(stream.lower(), self.api_type)
+
     def query(self, catalog_entry, state):
-        if self.api_type == BULK_API_TYPE:
+        api_type = self.effective_api_type(catalog_entry["stream"])
+        if api_type == BULK_API_TYPE:
             bulk = Bulk(self)
             return bulk.query(catalog_entry, state)
-        elif self.api_type == BULK2_API_TYPE:
+        elif api_type == BULK2_API_TYPE:
             bulk = Bulk2(self)
             return bulk.query(catalog_entry, state)
-        elif self.api_type == REST_API_TYPE:
+        elif api_type == REST_API_TYPE:
             rest = Rest(self)
             return rest.query(catalog_entry, state)
         else:
-            raise TapSalesforceExceptionError(f"api_type should be REST or BULK was: {self.api_type}")
+            raise TapSalesforceExceptionError(f"api_type should be REST or BULK was: {api_type}")
 
     def get_blacklisted_objects(self):
+        # Keyed off the global api_type only. Per-stream overrides are supported in
+        # the REST->BULK direction (the REST object blacklist is a subset of BULK's,
+        # so nothing an override targets gets wrongly excluded from discovery). The
+        # reverse (global BULK, override a BULK-unsupported object to REST) is not
+        # supported: the object would be filtered out here before the override runs.
         if self.api_type in [BULK_API_TYPE, BULK2_API_TYPE]:
             return UNSUPPORTED_BULK_API_SALESFORCE_OBJECTS.union(QUERY_RESTRICTED_SALESFORCE_OBJECTS).union(
                 QUERY_INCOMPATIBLE_SALESFORCE_OBJECTS
@@ -673,15 +708,18 @@ class Salesforce:
             raise TapSalesforceExceptionError(f"api_type should be REST or BULK was: {self.api_type}")
 
     # pylint: disable=line-too-long
-    def get_blacklisted_fields(self):
-        if self.api_type == BULK_API_TYPE or self.api_type == BULK2_API_TYPE:
+    def get_blacklisted_fields(self, api_type=None):
+        # Accepts an explicit api_type so discovery can pass the per-stream effective
+        # type (see effective_api_type); defaults to the global type otherwise.
+        api_type = api_type or self.api_type
+        if api_type == BULK_API_TYPE or api_type == BULK2_API_TYPE:
             return {
                 (
                     "EntityDefinition",
                     "RecordTypesSupported",
                 ): "this field is unsupported by the Bulk API."
             }
-        elif self.api_type == REST_API_TYPE:
+        elif api_type == REST_API_TYPE:
             return {}
         else:
-            raise TapSalesforceExceptionError(f"api_type should be REST or BULK was: {self.api_type}")
+            raise TapSalesforceExceptionError(f"api_type should be REST or BULK was: {api_type}")

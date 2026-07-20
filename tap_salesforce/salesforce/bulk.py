@@ -109,7 +109,13 @@ class Bulk:
         batch_status = self._poll_on_batch_status(job_id, batch_id)
 
         if batch_status["state"] == "Failed":
-            if "QUERY_TIMEOUT" in batch_status["stateMessage"]:
+            state_message = batch_status["stateMessage"]
+            # A batch too large to process in one shot can still succeed once PK
+            # chunking splits it into bounded Id-range sub-batches. This covers a
+            # slow query (QUERY_TIMEOUT) as well as an Activity object breaching
+            # Salesforce's 100k-distinct-who/what limit (OPERATION_TOO_LARGE),
+            # which no date-window narrowing can escape but Id chunking can.
+            if "QUERY_TIMEOUT" in state_message or "OPERATION_TOO_LARGE" in state_message:
                 batch_status = self._bulk_query_with_pk_chunking(catalog_entry, start_date)
                 job_id = batch_status["job_id"]
 
@@ -136,7 +142,7 @@ class Bulk:
                     )
                     tap_output.write_state(state)
             else:
-                raise TapSalesforceExceptionError(batch_status["stateMessage"])
+                raise TapSalesforceExceptionError(state_message)
         else:
             for result in self.get_batch_results(job_id, batch_id, catalog_entry):
                 yield result
@@ -160,10 +166,18 @@ class Bulk:
 
         return batch_status
 
+    @staticmethod
+    def _job_operation(stream):
+        # Use `query` (not `queryAll`) for Task so soft-deleted/archived Activity
+        # rows are excluded, mirroring the REST path (see rest.py). Their
+        # WhoId/WhatId would otherwise count toward the 100k-distinct-who/what
+        # limit. PK chunking still bounds each sub-batch regardless.
+        return "query" if stream.lower() == "task" else "queryAll"
+
     def _create_job(self, catalog_entry, pk_chunking=False):
         url = self.bulk_url.format(self.sf.instance_url, "job")
         body = {
-            "operation": "queryAll",
+            "operation": self._job_operation(catalog_entry["stream"]),
             "object": catalog_entry["stream"],
             "contentType": "CSV",
         }
