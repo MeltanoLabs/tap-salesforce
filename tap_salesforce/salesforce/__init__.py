@@ -10,7 +10,9 @@ import singer.utils as singer_utils
 from singer import metadata, metrics
 
 from tap_salesforce.observability import (
+    dogstatsd_count,
     emit_describe_call_metric,
+    get_tenant_id,
     log_api_call,
     log_describe_call,
     log_quota_status,
@@ -21,6 +23,7 @@ from tap_salesforce.salesforce.credentials import SalesforceAuth
 from tap_salesforce.salesforce.exceptions import (
     SFDCCustomNotAcceptableError,
     TapSalesforceExceptionError,
+    TapSalesforceOperationTooLargeError,
     TapSalesforceQuotaExceededError,
 )
 from tap_salesforce.salesforce.rest import Rest
@@ -679,6 +682,10 @@ class Salesforce:
         return self.api_type_overrides.get(stream.lower(), self.api_type)
 
     def query(self, catalog_entry, state):
+        # Reset per stream: the Bulk path sets pk_chunking mid-iteration and sync
+        # reads it afterwards to change bookmark handling. Without resetting here it
+        # would leak to later REST streams and corrupt their bookmarks.
+        self.pk_chunking = False
         api_type = self.effective_api_type(catalog_entry["stream"])
         if api_type == BULK_API_TYPE:
             bulk = Bulk(self)
@@ -687,10 +694,61 @@ class Salesforce:
             bulk = Bulk2(self)
             return bulk.query(catalog_entry, state)
         elif api_type == REST_API_TYPE:
-            rest = Rest(self)
-            return rest.query(catalog_entry, state)
+            return self._rest_query_with_bulk_fallback(catalog_entry, state)
         else:
             raise TapSalesforceExceptionError(f"api_type should be REST or BULK was: {api_type}")
+
+    def _rest_query_with_bulk_fallback(self, catalog_entry, state):
+        """Query via REST, escalating to the Bulk API if REST exhausts date-range
+        bisection on a too-large/timeout error. Falls back only when no records have
+        been emitted yet; once records are streamed to the target, re-querying via
+        Bulk would duplicate them, so the error is surfaced instead."""
+        stream = catalog_entry["stream"]
+        emitted = False
+        try:
+            for record in Rest(self).query(catalog_entry, state):
+                emitted = True
+                yield record
+        except TapSalesforceOperationTooLargeError as ex:
+            if emitted:
+                # Records from earlier bisected windows were already streamed and the
+                # bookmark advanced, so escalating mid-stream would duplicate them.
+                # Fail this run; it self-heals on the next one, which resumes from the
+                # advanced bookmark with the un-bisectable window first (emitted
+                # == False) and escalates to Bulk then. This failed-run-then-recover
+                # is expected behavior, not a defect.
+                LOGGER.warning(
+                    "REST query for %s hit %s after emitting records, so this run will "
+                    "fail. This is expected and self-heals on the next run: it resumes "
+                    "from the advanced bookmark at the un-bisectable window and escalates "
+                    "to the Bulk API (PK chunking) from there.",
+                    stream,
+                    ex,
+                )
+                raise
+            if stream in UNSUPPORTED_BULK_API_SALESFORCE_OBJECTS:
+                # The Bulk API cannot query this object (e.g. Activity-relationship
+                # objects like TaskWhoRelation), so escalating would fail at Bulk job
+                # creation with a confusing error. Surface the clear REST error.
+                LOGGER.warning(
+                    "REST query for %s hit %s, but the object is not Bulk-queryable; "
+                    "cannot escalate to the Bulk API. Surfacing the original error.",
+                    stream,
+                    ex,
+                )
+                raise
+            LOGGER.warning(
+                "REST query for %s exhausted date-range bisection (%s); "
+                "falling back to the Bulk API with PK chunking.",
+                stream,
+                ex,
+            )
+            dogstatsd_count(
+                "mdi.salesforce.api.rest_bulk_fallback",
+                1,
+                {"stream": stream, "tenant": get_tenant_id()},
+            )
+            yield from Bulk(self).query(catalog_entry, state)
 
     def get_blacklisted_objects(self):
         # Keyed off the global api_type only. Per-stream overrides are supported in

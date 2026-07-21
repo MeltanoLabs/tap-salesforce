@@ -9,6 +9,15 @@ class TapSalesforceQuotaExceededError(TapSalesforceExceptionError):
     pass
 
 
+class TapSalesforceOperationTooLargeError(TapSalesforceExceptionError):
+    """A REST query could not be satisfied even after date-range bisection
+    (OPERATION_TOO_LARGE / QUERY_TIMEOUT). Signals that the stream should be
+    retried via the Bulk API with PK chunking, which is not subject to the same
+    limits (e.g. the Activity 100k-distinct-who/what ceiling)."""
+
+    pass
+
+
 class SFDCCustomNotAcceptableError(Exception):
     """
     SFDC returned CustomNotAcceptable error with HTTP Error code 406.

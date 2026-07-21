@@ -4,7 +4,10 @@ import singer.utils as singer_utils
 from singer import metadata as singer_metadata
 from requests.exceptions import HTTPError
 
-from tap_salesforce.salesforce.exceptions import TapSalesforceExceptionError
+from tap_salesforce.salesforce.exceptions import (
+    TapSalesforceExceptionError,
+    TapSalesforceOperationTooLargeError,
+)
 
 LOGGER = singer.get_logger()
 
@@ -41,7 +44,10 @@ class Rest:
             end_date = sync_start
 
         if retries == 0:
-            raise TapSalesforceExceptionError(
+            # Exhausted date-range bisection for a retryable error (OPERATION_TOO_LARGE
+            # / QUERY_TIMEOUT). Signal the caller to escalate this stream to the Bulk
+            # API (PK chunking), which the REST bisection cannot substitute for.
+            raise TapSalesforceOperationTooLargeError(
                 "Ran out of retries attempting to query Salesforce Object {}".format(catalog_entry["stream"])
             )
 
@@ -114,7 +120,9 @@ class Rest:
                 end_date = end_date - half_range
 
                 if half_range.total_seconds() < 3600:
-                    raise TapSalesforceExceptionError(
+                    # Cannot bisect below the 1-hour floor and the window is still
+                    # too large; escalate this stream to the Bulk API (PK chunking).
+                    raise TapSalesforceOperationTooLargeError(
                         "Attempting to query by less than 1 hour range, this would cause infinite looping."
                     )
 
